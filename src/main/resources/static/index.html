@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>끄투 - 로비/게임 테스트</title>
+    <meta charset="UTF-8">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body { font-family: sans-serif; }
+        #lobby, #gameRoom { border: 2px solid #ccc; padding: 10px; margin-bottom: 10px; }
+        .lobby-section { border-top: 1px solid #eee; padding-top: 10px; margin-top: 10px; }
+        #gameRoom { display: none; } /* 게임방은 일단 숨김 */
+        #messages, #errors { border: 1px solid #eee; min-height: 50px; background: #f9f9f9; padding: 5px; }
+        #errors { color: red; }
+    </style>
+</head>
+<body>
+<h2>끄투 온라인 백엔드 테스트</h2>
+
+<div id="lobby">
+    <h3>로비</h3>
+    <strong>내 유저 ID:</strong> <input type="text" id="userId" value="Player1">
+    <hr>
+
+    <div class="lobby-section">
+        <h4>1. 새 방 만들기</h4>
+        <input type="text" id="roomName" value="새 게임방"> (방 제목) <br>
+        <input type="number" id="maxPlayers" value="4"> (최대 인원) <br>
+        <input type="number" id="botCount" value="1"> (봇 수) <br>
+        <button id="createRoomButton">방 만들고 참가하기</button>
+    </div>
+
+    <div class="lobby-section">
+        <h4>2. 기존 방 참가하기</h4>
+        <input type="text" id="joinRoomId" placeholder="참가할 방 ID를 입력하세요"> (방 ID) <br>
+        <button id="joinRoomButton">참가하기</button>
+    </div>
+</div>
+
+<div id="gameRoom">
+    <h3 id="roomTitle"></h3>
+    <div>
+        <input type="text" id="wordInput" placeholder="단어 입력 (예: 사과)">
+        <button id="sendButton">단어 전송</button>
+    </div>
+    <hr>
+    <h4>오류 메시지 (나만 보임):</h4>
+    <div id="errors"></div>
+    <h4>게임 로그 (모두가 봄):</h4>
+    <div id="messages"></div>
+</div>
+
+<script>
+    // --- 전역 변수 ---
+    let stompClient = null;
+    let currentRoomId = null;
+    let myUserId = null;
+
+    // --- DOM 요소 ---
+    const lobbyDiv = document.getElementById('lobby');
+    const gameRoomDiv = document.getElementById('gameRoom');
+    const createButton = document.getElementById('createRoomButton');
+    const joinButton = document.getElementById('joinRoomButton');
+    const sendButton = document.getElementById('sendButton');
+    const messagesDiv = document.getElementById('messages');
+    const errorsDiv = document.getElementById('errors');
+
+    // --- 1. 방 생성 버튼 클릭 ---
+    createButton.onclick = async function() {
+        myUserId = document.getElementById('userId').value;
+        const roomName = document.getElementById('roomName').value;
+        const maxPlayers = parseInt(document.getElementById('maxPlayers').value, 10);
+        const botCount = parseInt(document.getElementById('botCount').value, 10);
+
+        if (!myUserId || !roomName) {
+            alert("유저 ID와 방 제목을 입력하세요.");
+            return;
+        }
+
+        try {
+            logToScreen(`방 생성 요청 중...`, messagesDiv);
+            const response = await fetch('/api/rooms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    roomName: roomName,
+                    maxPlayers: maxPlayers,
+                    botCount: botCount
+                })
+            });
+
+            if (!response.ok) throw new Error('방 생성 실패 (서버 응답 오류)');
+
+            const room = await response.json();
+            currentRoomId = room.roomId;
+
+            logToScreen(`방 생성 성공 (ID: ${currentRoomId}). WebSocket 연결 시도...`, messagesDiv);
+            connectAndJoin();
+
+        } catch (error) {
+            logToScreen(`오류: ${error.message}`, errorsDiv);
+        }
+    };
+
+    // --- 2. 방 참가 버튼 클릭 ---
+    joinButton.onclick = function() {
+        myUserId = document.getElementById('userId').value;
+        currentRoomId = document.getElementById('joinRoomId').value;
+
+        if (!myUserId || !currentRoomId) {
+            alert("유저 ID와 참가할 방 ID를 모두 입력하세요.");
+            return;
+        }
+
+        logToScreen(`방 (${currentRoomId}) 참가 시도... WebSocket 연결 시작...`, messagesDiv);
+        connectAndJoin();
+    };
+
+    // --- 3. WebSocket 연결 및 방 참가 (공용 함수) ---
+    function connectAndJoin() {
+        lobbyDiv.style.display = 'none';
+        gameRoomDiv.style.display = 'block';
+        document.getElementById('roomTitle').innerText = `게임방 ID: ${currentRoomId}`;
+        errorsDiv.innerHTML = "";
+        messagesDiv.innerHTML = "";
+
+        const socket = new SockJS('/ws');
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect({},
+            function (frame) {
+                logToScreen('STOMP 연결 성공!', messagesDiv);
+
+                stompClient.subscribe('/topic/game-room/' + currentRoomId, function (message) {
+                    logToScreen(message.body, messagesDiv);
+                });
+
+                stompClient.subscribe('/user/queue/errors', function (message) {
+                    logToScreen(message.body, errorsDiv);
+                });
+
+                stompClient.send("/app/game/" + currentRoomId + "/join",
+                    {},
+                    JSON.stringify({ userId: myUserId })
+                );
+            },
+            function (error) {
+                logToScreen('STOMP 연결 실패: ' + error, errorsDiv);
+                lobbyDiv.style.display = 'block';
+                gameRoomDiv.style.display = 'none';
+            }
+        );
+    }
+
+    // --- 4. 단어 전송 버튼 클릭 ---
+    sendButton.onclick = function() {
+        const word = document.getElementById('wordInput').value;
+        if (word && stompClient && currentRoomId) {
+
+            stompClient.send("/app/game/" + currentRoomId + "/word",
+                {},
+                JSON.stringify({ word: word, userId: myUserId })
+            );
+            document.getElementById('wordInput').value = '';
+        }
+    };
+    document.getElementById('wordInput').addEventListener('keydown', function(event) {
+        // Enter 키가 눌렸는지 확인 (keyCode 13 == Enter)
+        if (event.key === 'Enter' || event.keyCode === 13) {
+            // Enter 키의 기본 동작(예: 줄바꿈)을 막음
+            event.preventDefault();
+            // '단어 전송' 버튼 클릭 함수를 직접 호출
+            sendButton.onclick();
+        }
+    });
+
+    // --- 유틸: 화면에 로그 찍기 ---
+    function logToScreen(message, targetDiv) {
+        // [!!!] 이 부분이 수정되었습니다 (따옴표 오류 수정)
+        targetDiv.innerHTML = "<p>" + message + "</p>" + targetDiv.innerHTML;
+    }
+</script>
+
+</body>
+</html>
