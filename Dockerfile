@@ -5,7 +5,7 @@ COPY . .
 
 # gradlew 실행 권한 부여
 RUN chmod +x ./gradlew
-
+RUN ./gradlew clean
 # Gradle을 사용하여 애플리케이션을 빌드합니다. (bootJar 사용)
 RUN ./gradlew bootJar
 

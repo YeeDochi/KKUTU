@@ -6,7 +6,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import lombok.RequiredArgsConstructor;
-
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 @Service
 //@RequiredArgsConstructor
 public class KoreanApiService {
@@ -21,43 +23,73 @@ public class KoreanApiService {
     @Value("${api.key.korean}")
     private String apiKey;
 
-    public boolean validateWord(String word) {
+    public Map<String, Object> validateWord(String word) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("isValid", false); // 기본값 false
+        result.put("definition", null); // 기본값 null
+
         try {
-            // [수정] WebClient 체인을 원래대로 되돌리고, 응답을 String으로 받습니다.
             String rawResponse = koreanApiWebClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/search.do")
                             .queryParam("key", apiKey)
                             .queryParam("q", word)
                             .queryParam("req_type", "json")
-                            .queryParam("method", "exact")
+                            .queryParam("method", "exact") // 정확히 일치하는 단어만
                             .build())
                     .retrieve()
-                    .bodyToMono(String.class) // 응답을 String으로 받음
-                    .block(); // 결과가 올 때까지 대기
+                    .bodyToMono(String.class)
+                    .block(); // 결과 대기
 
-            // [디버깅] API가 보낸 원본(Raw) 응답 문자열을 로그로 찍어봅니다.
-            System.out.println("<<< API Raw Response: " + rawResponse);
+            System.out.println("<<< API Raw Response for [" + word + "]: " + rawResponse); // 디버깅 로그
 
-            // String으로 받은 응답을 JsonNode로 직접 파싱합니다.
-            JsonNode response = objectMapper.readTree(rawResponse);
+            if (rawResponse == null || rawResponse.isEmpty()) {
+                System.err.println("!!! API FAIL (Response Null/Empty) for word: [" + word + "]");
+                // isValid는 이미 false
+            } else {
+                JsonNode response = objectMapper.readTree(rawResponse);
+                if (response != null && response.has("channel") &&
+                        response.get("channel").has("total") &&
+                        response.get("channel").get("total").asInt() > 0) {
 
-            // 응답 구조를 파싱하여, 'total' 값이 0보다 큰지 확인
-            if (response != null && response.has("channel") &&
-                    response.get("channel").has("total") &&
-                    response.get("channel").get("total").asInt() > 0) {
+                    // [!!!] 단어 뜻 추출 로직 추가 ---
+                    String finalDefinition = "뜻 정보 없음"; // 기본값
 
-                return true; // 검색 결과가 있음 (표준어)
+                    try {
+                        JsonNode itemNode = response.path("channel").path("item");
+                        if (itemNode.isArray() && itemNode.size() > 0) {
+                            JsonNode senseNode = itemNode.get(0).path("sense");
+
+                            // [!!!] sense가 배열인지 객체인지 확인
+                            if (senseNode.isArray() && senseNode.size() > 0) {
+                                // 배열이면 첫 번째 요소 사용
+                                finalDefinition = senseNode.get(0).path("definition").asText("뜻 정보 없음");
+                            } else if (senseNode.isObject()) {
+                                // 객체면 바로 사용
+                                finalDefinition = senseNode.path("definition").asText("뜻 정보 없음");
+                            }
+                        }
+                    } catch (Exception e) {
+                        System.err.println("!!! API Definition Parse Error for [" + word + "]: " + e.getMessage());
+                        // finalDefinition은 기본값 "뜻 정보 없음" 유지
+                    }
+                    // --- [!!!] 추출 로직 끝 ---
+
+                    System.out.println("--- API SUCCESS for word: [" + word + "], Definition: [" + finalDefinition + "]");
+                    result.put("isValid", true);
+                    result.put("definition", finalDefinition); // [!!!] 추출된 뜻 저장
+
+                } else {
+                    System.err.println("!!! API FAIL (Total <= 0 or Invalid JSON) for word: [" + word + "]");
+                    // isValid는 이미 false
+                }
             }
-
-            return false; // 검색 결과가 없음 (total: 0)
-
         } catch (Exception e) {
-            // [중요] 어떤 에러가 발생했는지 로그를 찍습니다.
-            System.err.println("!!! 국립국어원 API 호출 실패: " + e.getMessage());
-            e.printStackTrace(); // 에러 상세 내용을 콘솔에 출력
-
-            return false;
+            System.err.println("!!! API EXCEPTION for word: [" + word + "]: " + e.getMessage());
+            // isValid는 이미 false
         }
+
+        System.out.println("--- KoreanApiService.validateWord returning: " + result + " for word: [" + word + "]");
+        return result; // [!!!] Map 반환
     }
 }

@@ -8,15 +8,23 @@ import org.springframework.context.ApplicationEvent;
 @Setter
 public class TurnSuccessEvent extends ApplicationEvent {
     private final String roomId;
-    private final String nextPlayerId;
+    // [!!!] nextPlayerId -> nextPlayerUid
+    private final String nextPlayerUid;
     private final String lastword;
 
-    public TurnSuccessEvent(Object source, String roomId, String userId, String word) {
+    // [!!!] userId -> uid
+    public TurnSuccessEvent(Object source, String roomId, String uid, String word) {
         super(source);
         this.roomId = roomId;
-        this.nextPlayerId = userId;
+        this.nextPlayerUid = uid; // [!!!]
         this.lastword = word;
     }
 
-
+    // [!!!] (호환성을 위해) 기존 Getter 유지, 새 Getter 추가
+    public String getNextPlayerId() {
+        return nextPlayerUid;
+    }
+    public String getNextPlayerUid() {
+        return nextPlayerUid;
+    }
 }

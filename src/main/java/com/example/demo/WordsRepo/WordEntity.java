@@ -9,14 +9,18 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-@Table(name = "dictionary", indexes = @Index(name = "idx_name", columnList = "name"))
+@Table(name = "kr")
 public class WordEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id; // 단어 ID
+    private Long id;
 
-    @Column(nullable = false, unique = true, length = 100)
-    private String name; // 단어 (예: "사과")
+    @Column(name = "name", columnDefinition = "TEXT") // [!!! 수정 !!!] SQL 파일 정의에 맞춰 TEXT 타입 명시 (VARCHAR 대신)
+    private String name; // 단어
+
+    // [!!! 추가 !!!] 품사 정보를 저장할 필드 추가
+    @Column(name = "part", columnDefinition = "TEXT")
+    private String part; // 품사 (예: "명사", "동사")
 
 }

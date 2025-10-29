@@ -1,58 +1,108 @@
-package com.example.demo.bots;
+package com.example.demo.bots; // 패키지 확인
 
+import com.example.demo.DTO.GameRoom;
 import com.example.demo.Event.TurnSuccessEvent;
 import com.example.demo.WordsRepo.WordEntity;
 import com.example.demo.WordsRepo.WordRepository;
 import com.example.demo.service.GameRoomService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map; // [!!!] Map import 추가
+import java.util.Set; // Set import (기존 코드에 있었을 수 있음)
+import java.util.regex.Pattern; // Pattern import (기존 코드에 있었을 수 있음)
 
 @Service
 @RequiredArgsConstructor
 public class AiPlayerService {
 
-    // [필수] 이제 진짜 DB(MySQL)에서 단어를 가져와야 합니다.
     private final WordRepository wordRepository;
-
-    // [필수] 봇도 단어를 제출해야 하므로 GameRoomService가 필요합니다.
     private final GameRoomService gameRoomService;
-    private final SimpMessagingTemplate messagingTemplate;
+    // VALID_WORD_PATTERN은 현 로직에서 직접 사용 안 하지만, 혹시 모르니 남겨둠
+    private static final Pattern VALID_WORD_PATTERN = Pattern.compile("^[가-힣]{2,}$");
+
     @Async
     @EventListener
+    @Transactional
     public void onTurnSuccess(TurnSuccessEvent event) {
+        String nextPlayerUid = event.getNextPlayerUid();
 
-        // [수정] 봇 ID가 'AI_BOT_'으로 시작하는지 검사
-        String nextPlayerId = event.getNextPlayerId();
-        if (nextPlayerId != null && nextPlayerId.startsWith("AI_BOT_")) {
+        if (nextPlayerUid != null && nextPlayerUid.startsWith("AI_BOT_")) {
+            try { Thread.sleep(1500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
 
-            // (1~2초 지연...)
-            try { Thread.sleep(1500); } catch (InterruptedException e) {}
+            String lastWord = event.getLastword();
+            String startingLetter;
 
-            // (DB에서 단어 찾아오기...)
-            String startingLetter = event.getLastword().substring(event.getLastword().length() - 1);
-            String aiWord = wordRepository.findRandomWordStartingWith(startingLetter)
-                    .map(WordEntity::getName) // Word 객체에서 이름(String)만 추출
-                    .orElse(null); // 못찾으면 null
+            if (lastWord == null) {
+                startingLetter = "가";
+                System.out.println(">>> AI BOT(" + nextPlayerUid + ") searching for ANY word (defaulting to '가').");
+            } else {
+                startingLetter = lastWord.substring(lastWord.length() - 1);
+                System.out.println(">>> AI BOT(" + nextPlayerUid + ") searching for valid words starting with: [" + startingLetter + "]");
+            }
 
-            if (aiWord != null) {
-                // [성공] 봇이 단어를 찾음
+            String chosenWord = null;
+            String chosenDefinition = null;
+            try {
+                // 두음법칙 적용 (변경 없음)
+                String alternativeLetter = gameRoomService.getAlternativeStartChar(startingLetter);
+                List<WordEntity> potentialWords = new ArrayList<>(wordRepository.findValidWords(startingLetter, "명사"));
+                if (alternativeLetter != null) {
+                    System.out.println(">>> AI BOT(" + nextPlayerUid + ") Also searching for alternative: [" + alternativeLetter + "]");
+                    potentialWords.addAll(wordRepository.findValidWords(alternativeLetter, "명사"));
+                }
+                Collections.shuffle(potentialWords);
+
+                System.out.println(">>> AI BOT(" + nextPlayerUid + ") JPA Potential Words (Total): " + potentialWords.size());
+
+                if (!potentialWords.isEmpty()) {
+                    // --- [!!!] 여기가 수정됩니다 (검증 결과 Map 처리) ---
+                    for (WordEntity wordEntity : potentialWords) {
+                        String potentialWord = wordEntity.getName();
+
+                        // [!!!] validateWordSynchronously 호출 (이제 Map 반환)
+                        Map<String, Object> validationResult = gameRoomService.validateWordSynchronously(
+                                event.getRoomId(), potentialWord, nextPlayerUid);
+
+                        // [!!!] Map에서 boolean 값 추출
+                        boolean isValid = (Boolean) validationResult.getOrDefault("isValid", false);
+
+                        if (isValid) {
+                            chosenWord = potentialWord;
+                            chosenDefinition = (String) validationResult.get("definition"); // [!!!] 뜻 저장
+                            // --- [!!!] ---
+                            System.out.println("--- AI BOT(" + nextPlayerUid + ") validation PASSED for: [" + chosenWord + "]");
+                            break;
+                        } else {
+                            System.out.println("--- AI BOT(" + nextPlayerUid + ") validation FAILED for: [" + potentialWord + "], trying next...");
+                        }
+                    }
+                    // --- [!!!] 수정 끝 ---
+                }
+            } catch (Exception e) {
+                System.err.println("!!! AI BOT(" + nextPlayerUid + ") Error during DB query/validation loop: " + e.getMessage());
+                e.printStackTrace();
+            }
+
+            // 제출 로직 (변경 없음)
+            if (chosenWord != null) {
+                System.out.println("<<< AI BOT(" + nextPlayerUid + ") finally submitting word: [" + chosenWord + "]");
                 gameRoomService.handleWordSubmission(
                         event.getRoomId(),
-                        aiWord,
-                        nextPlayerId
+                        chosenWord,
+                        nextPlayerUid,
+                        chosenDefinition // [!!!] 저장된 뜻 전달
                 );
             } else {
-                // [실패] 봇이 단어를 못 찾음
-                // (로그를 남겨서 DB에 단어가 없는지 확인)
-                System.err.println("!!! AI BOT(" + nextPlayerId + ")가 '" + startingLetter + "'(으)로 시작하는 단어를 DB에서 못 찾았습니다.");
-
-                // 1. 봇이 턴을 포기하도록 GameRoomService에 요청
-                gameRoomService.passTurn(event.getRoomId(), nextPlayerId);
+                System.err.println("!!! AI BOT(" + nextPlayerUid + ") could NOT find any valid & usable word. Passing turn.");
+                gameRoomService.passTurn(event.getRoomId(), nextPlayerUid);
             }
         }
     }
 }
-

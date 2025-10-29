@@ -3,10 +3,13 @@ package com.example.demo.Controller;
 
 import com.example.demo.DTO.CreateRoomRequest;
 import com.example.demo.DTO.GameRoom;
+import com.example.demo.DTO.RoomInfoDTO;
 import com.example.demo.service.GameRoomService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
-import java.util.Map; // [추가]
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
@@ -15,11 +18,6 @@ public class RoomApiController {
 
     private final GameRoomService gameRoomService;
 
-    /**
-     * 새 게임방을 생성합니다.
-     * @param request (roomName, maxPlayers, botCount)
-     * @return 생성된 방의 ID (roomId)
-     */
     @PostMapping
     public Map<String, String> createRoom(@RequestBody CreateRoomRequest request) {
         // GameRoomService에 방 생성을 위임
@@ -33,5 +31,20 @@ public class RoomApiController {
         return Map.of("roomId", newRoom.getRoomId());
     }
 
-    // (향후 /api/rooms (GET)으로 전체 방 목록을 조회하는 기능도 추가 가능)
+    @GetMapping
+    public List<RoomInfoDTO> getActiveRooms() {
+        // GameRoomService에서 활성 방 목록 가져오기 (GameRoom 객체 맵)
+        Map<String, GameRoom> activeRooms = gameRoomService.getActiveGameRooms(); // getActiveGameRooms 메소드 필요 (아래 참고)
+
+        // GameRoom 객체들을 RoomInfoDTO 객체 리스트로 변환하여 반환
+        return activeRooms.values().stream()
+                .map(room -> new RoomInfoDTO(
+                        room.getRoomId(),
+                        room.getRoomName(),
+                        room.getPlayers().size(), // 현재 플레이어 수 계산
+                        room.getMaxPlayers(),
+                        room.getBotCount()
+                ))
+                .collect(Collectors.toList());
+    }
 }

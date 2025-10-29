@@ -1,186 +1,382 @@
-package com.example.demo.service;
-
+package com.example.demo.service; // 패키지 확인
 
 import com.example.demo.DTO.GameRoom;
 import com.example.demo.Event.TurnSuccessEvent;
-import com.example.demo.Event.WordValidationRequestEvent;
-//import jakarta.annotation.PostConstruct;
+import com.example.demo.service.KoreanApiService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.UUID; // [!!!] UUID import
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class GameRoomService {
-    // 게임방 저장
+
     private final Map<String, GameRoom> activeGameRooms = new ConcurrentHashMap<>();
-    // 이벤트 발행을 위한 객체
     private final ApplicationEventPublisher eventPublisher;
-    // WebSocket 클라이언트에게 메시지를 방송하기 위한 객체
     private final SimpMessagingTemplate messagingTemplate;
+    private final KoreanApiService koreanApiService;
+    private static final int MAX_FAILURES = 3;
+    private static final Pattern VALID_WORD_PATTERN = Pattern.compile("^[가-힣]{2,}$");
 
-    /**
-     * 컨트롤러로부터 단어 제출 요청을 받음
-     */
-
-//    //테스트용
-//    @PostConstruct
-//    public void initTestRoom() {
-//        // "테스트 방", 최대 4명, 봇 1명 설정
-//        GameRoom testRoom = new GameRoom("123", "테스트 방", 4, 1);
-//
-//        // [중요] "testUser" (index.html의 유저)를 방에 미리 참가시킵니다.
-//        testRoom.addPlayer("testUser");
-//
-//        activeGameRooms.put("123", testRoom);
-//        System.out.println("--- [테스트용 123번 방 생성 및 testUser 참가 완료] ---");
-//    }
-
-
-    public void handleWordSubmission(String roomId, String word, String userId) {
-        // (1. 게임방 내부의 간단한 규칙 검증: 이미 사용된 단어인가? 턴이 맞는가?)
-        // ...
-        GameRoom room = activeGameRooms.get(roomId);
-        if (room == null) {
-            // (방이 없는 경우 - 이 경우는 거의 없지만 1:1 메시지 대신 로그로 남김)
-            System.err.println("handleWordSubmission: Room not found: " + roomId);
-            return;
-        } // 방이 없음
-
-        // [기능 1] 턴 분간
-        if (!room.getCurrentPlayer().equals(userId)) {
-            messagingTemplate.convertAndSend(
-                    "/topic/game-room/" + roomId,
-                    "[규칙 오류] " + userId + "님, 아직 턴이 아닙니다! (현재 턴: " + room.getCurrentPlayer() + ")"
-            );
-            return;
-        }
-        // [기능 2] 심판 봇: 끝말잇기 규칙 검사
-        if (room.getLastWord() != null && !word.startsWith(room.getLastWord().substring(room.getLastWord().length() - 1))) {
-            messagingTemplate.convertAndSend(
-                    "/topic/game-room/" + roomId,
-                    "[규칙 오류] " + userId + "님! '" + room.getLastWord().substring(room.getLastWord().length()-1,room.getLastWord().length()) + "' (으)로 시작하는 단어를 입력하세요!"
-            );
-            return;
-        }
-
-        // [기능 3] 심판 봇: 사용된 단어 검사
-        if (room.getUsedWords().contains(word)) {
-            messagingTemplate.convertAndSend(
-                    "/topic/game-room/" + roomId,
-                    "[규칙 오류] '" + word + "' (은)는 이미 사용된 단어입니다!"
-            );
-            return;
-        }
-
-        // [최종 통과] 모든 규칙을 통과했으면, 국어사전 봇에게 '단어 존재 유무'를 검증시킴
-        eventPublisher.publishEvent(new WordValidationRequestEvent(this, roomId, word, userId));
-    }
-
-    public void processValidationResult(String roomId, String userId, String word, boolean isValid) {
-        GameRoom room = activeGameRooms.get(roomId);
-        String topic = "/topic/game-room/" + roomId;
-
-        if (isValid) {
-
-            room.getUsedWords().add(word); // 사용 단어 추가
-            room.setLastWord(word);        // 마지막 단어 갱신
-            String nextPlayer = room.getNextPlayer();// 턴 넘기기
-
-            messagingTemplate.convertAndSend(topic,
-                    userId + "님 '" + word + "' 성공! 다음 턴...");
-
-            eventPublisher.publishEvent(new TurnSuccessEvent(this, roomId, nextPlayer, word)); // 봇을 호출하는 이벤트
-        } else {
-            messagingTemplate.convertAndSend(topic,
-                    "'" + word + "' (은)는 사전에 없는 단어입니다. " + userId + "님 다시 시도하세요.");
-        }
-    }
-    public void addPlayerToRoom(String roomId, String userId) {
-        GameRoom room = activeGameRooms.get(roomId);
-        if (room == null) {
-            messagingTemplate.convertAndSendToUser(userId, "/queue/errors", "존재하지 않는 방입니다.");
-            return;
-        }
-
-        // 1. 플레이어 추가 시도 (인원 제한 체크 포함)
-        boolean success = room.addPlayer(userId);
-
-        if (success) {
-            // 2. [기존] 새 유저 입장 알림 방송
-            messagingTemplate.convertAndSend(
-                    "/topic/game-room/" + roomId,
-                    "새로운 유저 입장: " + userId + " (현재 인원: " + room.getPlayers().size() + "/" + room.getMaxPlayers() + ")"
-            );
-
-            // 3. [!!! 여기가 추가된 부분 !!!]
-            // 방금 입장한 플레이어가 '봇 이후의 첫 번째 사람'인지 확인
-            // (이 시점에 GameRoom.addPlayer에서 currentTurnIndex가 이 사람으로 설정되었음)
-            if (room.getPlayers().size() == room.getBotCount() + 1) {
-                // 첫 번째 사람이 입장했으므로, 게임 시작 및 첫 턴 알림 방송
-                String firstPlayer = room.getCurrentPlayer(); // 첫 턴 플레이어 가져오기
-                messagingTemplate.convertAndSend(
-                        "/topic/game-room/" + roomId,
-                        "게임 시작! 첫 턴은 " + firstPlayer + "님입니다."
-                );
-
-                // [선택 사항] 만약 첫 턴이 봇이라면, 여기서 봇을 바로 깨울 수도 있습니다.
-                // (하지만 현재 로직은 첫 사람이 턴을 가져가므로 이 코드는 필요 없음)
-                // if (firstPlayer.startsWith("AI_BOT_")) {
-                //     // 첫 단어는 없으므로 lastWord를 null 대신 특수 값(예: "")으로 전달
-                //     eventPublisher.publishEvent(new TurnSuccessEvent(this, roomId, firstPlayer, ""));
-                // }
-            }
-
-        } else {
-            // [기존] 방 꽉 참 알림 (1:1)
-            messagingTemplate.convertAndSendToUser(userId, "/queue/errors", "방이 꽉 찼습니다.");
-        }
-    }
+    // --- 방 생성 메소드 (변경 없음) ---
     public GameRoom createRoom(String roomName, int maxPlayers, int botCount) {
-        // 1. 고유한 방 ID 생성
-        String roomId = UUID.randomUUID().toString();
-
-        // 2. GameRoom 객체 생성 (이때 봇이 자동으로 추가됨)
+        String roomId = UUID.randomUUID().toString().substring(0, 8);
         GameRoom newRoom = new GameRoom(roomId, roomName, maxPlayers, botCount);
-
-        // 3. 서비스의 관리 목록에 추가
         activeGameRooms.put(roomId, newRoom);
-
-        // 4. 생성된 방 정보를 컨트롤러에 반환
+        System.out.println("--- [ROOM CREATED] ID: " + roomId + ", Name: " + roomName + " ---");
         return newRoom;
     }
-    public void passTurn(String roomId, String userId) {
+
+    // --- [!!!] `addPlayerToRoom` 시그니처 및 로직 변경 (String 반환) ---
+    /**
+     * @return String "SUCCESS" 또는 에러 코드 (e.g., "NICKNAME_DUPLICATE")
+     */
+    public String addPlayerToRoom(String roomId, String uid, String nickname) {
+        GameRoom room = activeGameRooms.get(roomId);
+        if (room == null) {
+            return "ROOM_NOT_FOUND"; // [!!!] String 반환
+        }
+
+        // --- [!!!] 중복 검사 로직 (Controller가 에러를 보낼 수 있도록) ---
+        if (room.getPlayers().size() >= room.getMaxPlayers()) {
+            return "ROOM_FULL"; // [!!!] String 반환
+        }
+        // (서버 UID 발급 방식이므로 UID 중복은 사실상 발생 안 하지만, 방어 코드로 둠)
+        if (room.getPlayers().stream().anyMatch(p -> p.getUid().equals(uid))) {
+            return "UID_DUPLICATE"; // [!!!] String 반환
+        }
+        // --- [!!!] 검사 끝 ---
+
+        // GameRoom.addPlayer는 이제 검사를 통과했으므로 true를 반환해야 함
+        // (GameRoom.java의 중복 검사는 이제 중복임)
+        boolean success = room.addPlayer(uid, nickname);
+
+        if (success) {
+            // 성공 방송 (변경 없음)
+            messagingTemplate.convertAndSend("/topic/game-room/" + roomId,
+                    "새로운 유저 입장: " + nickname + " (현재 인원: " + room.getPlayers().size() + "/" + room.getMaxPlayers() + ")");
+
+            if (room.getPlayers().size() - room.getBotCount() == 1) {
+                String firstPlayerNickname = room.getCurrentPlayer().getNickname();
+                messagingTemplate.convertAndSend("/topic/game-room/" + roomId,
+                        "게임 시작! 첫 턴은 " + firstPlayerNickname + "님입니다.");
+            }
+            return "SUCCESS"; // [!!!] String 반환
+        } else {
+            // (이론상 여기에 도달하면 안 됨, GameRoom.java의 검사와 중복되기 때문)
+            return "ADD_PLAYER_FAILED"; // Fallback
+        }
+    }
+
+
+    // --- `validateWordSynchronously` 시그니처 변경 (uid) ---
+    public Map<String, Object> validateWordSynchronously(String roomId, String word, String uid) {
         GameRoom room = activeGameRooms.get(roomId);
 
-        // 방이 없거나, 현재 턴이 봇의 턴이 아니면 무시
-        if (room == null || !room.getCurrentPlayer().equals(userId)) {
+        // [!!!] HashMap 사용으로 변경 (null 허용) ---
+        Map<String, Object> failResult = new HashMap<>();
+        failResult.put("isValid", false);
+        failResult.put("definition", null);
+        // --- [!!!] ---
+
+        // 기본 검사 실패 시
+        if (room == null || word == null || word.isEmpty()) {
+            System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Room not found or word is empty");
+            return failResult; // [!!!] HashMap 반환
+        }
+        if (!VALID_WORD_PATTERN.matcher(word).matches()) {
+            System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Invalid pattern");
+            return failResult; // [!!!] HashMap 반환
+        }
+        if (room.getLastWord() != null) {
+            String lastCharStr = room.getLastWord().substring(room.getLastWord().length() - 1);
+            String alternativeStartStr = getAlternativeStartChar(lastCharStr);
+            boolean rulePass = word.startsWith(lastCharStr) || (alternativeStartStr != null && word.startsWith(alternativeStartStr));
+            if (!rulePass) {
+                System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Rule mismatch (Last: " + lastCharStr + ")");
+                return failResult; // [!!!] HashMap 반환
+            }
+        }
+        if (room.getUsedWords().contains(word)) {
+            System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Already used");
+            return failResult; // [!!!] HashMap 반환
+        }
+
+        // API 호출 (이제 Map 반환)
+        Map<String, Object> apiResult = koreanApiService.validateWord(word);
+
+        if (!(Boolean) apiResult.getOrDefault("isValid", false)) {
+            System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Failed API validation");
+            // apiResult는 이미 isValid=false, definition=null 또는 실제값 을 포함
+        } else {
+            System.out.println("--- [SYNC VALIDATE SUCCESS] Word: [" + word + "] (User: " + uid + ")");
+            // apiResult는 isValid=true, definition=실제값 을 포함
+        }
+        return apiResult; // apiResult는 null 값을 포함할 수 있는 HashMap임
+    }
+
+    // --- `handleWordSubmission` 시그니처 변경 (uid) ---
+    public void handleWordSubmission(String roomId, String word, String uid, String definition) {
+        GameRoom room = activeGameRooms.get(roomId);
+        if (room == null) return;
+
+        // 턴 체크
+        if (room.getCurrentPlayer() == null || !room.getCurrentPlayer().getUid().equals(uid)) {
+            System.err.println("!!! ERROR in handleWordSubmission - Not player's turn.");
+            return;
+        }
+        // 중복 단어 체크 (봇이 실수할 경우 대비)
+        if (room.getUsedWords().contains(word)) {
+            System.err.println("!!! ERROR in handleWordSubmission - Word already used by BOT?: " + word);
+            // 봇이 중복 제출하면 그냥 턴을 넘김
+            passTurn(roomId, uid);
             return;
         }
 
-        // 1. 턴을 다음 사람으로 넘김
-        String nextPlayer = room.getNextPlayer();
+        // [!!!] processValidationResult 호출 시 전달받은 definition 전달
+        // (봇이 제출하는 단어는 AiPlayerService에서 이미 검증했으므로 isValid=true)
+        processValidationResult(roomId, uid, word, true, definition);
+    }
 
-        // 2. 턴이 넘어갔음을 '방송'
+    // --- `handleSubmitFromPlayer` 시그니처 변경 (uid) ---
+    public void handleSubmitFromPlayer(String roomId, String word, String uid) {
+        GameRoom room = activeGameRooms.get(roomId);
+        if (room == null || room.getCurrentPlayer() == null || !room.getCurrentPlayer().getUid().equals(uid)) {
+            System.err.println("!!! ERROR in handleSubmitFromPlayer - Room or Turn mismatch.");
+            return;
+        }
+
+        // [!!!] 동기 검증 결과 (Map) 받기
+        Map<String, Object> validationResult = validateWordSynchronously(roomId, word, uid);
+        boolean isValid = (Boolean) validationResult.getOrDefault("isValid", false);
+        String definition = (String) validationResult.get("definition"); // 실패 시 null
+
+        // [!!!] processValidationResult 호출 시 definition 전달
+        processValidationResult(roomId, uid, word, isValid, definition);
+    }
+
+    // --- `processValidationResult` 시그니처 변경 (uid) ---
+    public void processValidationResult(String roomId, String uid, String word, boolean isValid, String definition) {
+        GameRoom room = activeGameRooms.get(roomId);
+        if (room == null) return;
+
+        String topic = "/topic/game-room/" + roomId;
+        String nickname = room.getNicknameByUid(uid);
+
+        if (isValid) {
+            // [!!!] 메시지 포맷 변경 ---
+            String previousWord = room.getLastWord(); // 이전 단어 가져오기
+
+            // 상태 업데이트 (순서 중요: previousWord 먼저 가져오고 lastWord 업데이트)
+            room.resetFailureCount(uid);
+            room.getUsedWords().add(word);
+            room.setLastWord(word); // 현재 단어를 다음을 위해 저장
+
+            // 새 메시지 생성
+            String successMessage = (previousWord != null ? previousWord + " -> " : "") +
+                    word + " (성공! 뜻: " + (definition != null ? definition : "정보 없음") + ")";
+
+            // [!!!] 변경된 메시지 전송
+            messagingTemplate.convertAndSend(topic, successMessage);
+
+            // 다음 턴 진행 로직 (기존과 동일)
+            GameRoom.PlayerInfo nextPlayer = room.getNextPlayer();
+            if (nextPlayer == null) {
+                System.err.println("!!! ERROR in processValidationResult - Next player is null.");
+                return;
+            }
+            // [!!!] 다음 턴 알림 메시지 (별도 전송)
+            messagingTemplate.convertAndSend(topic, "다음 턴: " + nextPlayer.getNickname());
+
+            eventPublisher.publishEvent(new TurnSuccessEvent(this, roomId, nextPlayer.getUid(), word));
+            // --- [!!!] 메시지 포맷 변경 끝 ---
+
+        } else {
+            // 실패 로직 (기존과 동일)
+            System.out.println("--- [PROCESS RESULT FAIL] Room: " + roomId + ", User: " + nickname + ", Word: [" + word + "] ---");
+            if (!uid.startsWith("AI_BOT_")) {
+                int failures = room.incrementFailureCount(uid);
+                messagingTemplate.convertAndSend(topic,
+                        "'" + word + "' (은)는 유효하지 않은 단어입니다. " + nickname + "님 다시 시도하세요. (실패: " + failures + "/" + MAX_FAILURES + ")");
+                if (failures >= MAX_FAILURES) {
+                    eliminatePlayer(roomId, uid, "실패 3회 초과");
+                }
+            } else {
+                System.err.println("!!! BOT validation failed unexpectedly: " + word);
+                passTurn(roomId, uid);
+            }
+        }
+    }
+
+    // --- `passTurn` 시그니처 변경 (uid) ---
+    public void passTurn(String roomId, String uid) {
+        GameRoom room = activeGameRooms.get(roomId);
+        if (room == null || room.getCurrentPlayer() == null || !room.getCurrentPlayer().getUid().equals(uid)) {
+            System.err.println("!!! ERROR in passTurn - Room not found or not player's turn.");
+            return;
+        }
+
+        String nickname = room.getNicknameByUid(uid); // 닉네임 조회
+        System.out.println("--- [PASS TURN & ELIMINATE] User: " + nickname + " in room " + roomId + " ---");
+
         messagingTemplate.convertAndSend(
                 "/topic/game-room/" + roomId,
-                userId + "님이 턴을 포기했습니다. 다음 턴: " + nextPlayer
+                nickname + "님이 턴을 포기했습니다." // 닉네임
         );
 
-        // 3. [중요] 턴이 넘어갔으니, '또 다른 봇'을 깨워야 할 수도 있음
-        //    (lastWord는 변경 없이 그대로 전달)
-        eventPublisher.publishEvent(new TurnSuccessEvent(
-                this,
-                roomId,
-                nextPlayer,
-                room.getLastWord()
-        ));
+        eliminatePlayer(roomId, uid, "턴 포기"); // uid
+    }
+
+    // --- `eliminatePlayer` 시그니처 변경 (uid) ---
+    private void eliminatePlayer(String roomId, String uid, String reason) {
+        GameRoom room = activeGameRooms.get(roomId);
+        if (room == null || room.getPlayerByUid(uid) == null) {
+            return;
+        }
+
+        String nickname = room.getNicknameByUid(uid); // 닉네임 조회
+        System.out.println("--- [ELIMINATE PLAYER] Room: " + roomId + ", User: " + nickname + ", Reason: " + reason + " ---");
+
+        GameRoom.PlayerInfo currentPlayer = room.getCurrentPlayer();
+        String eliminatedPlayerCurrentTurnUid = (currentPlayer != null) ? currentPlayer.getUid() : null; // [!!!] uid (NPE 방지)
+
+        room.removePlayer(uid); // uid
+
+        messagingTemplate.convertAndSend(
+                "/topic/game-room/" + roomId,
+                nickname + "님이 탈락했습니다. (" + reason + ") 남은 인원: " + room.getPlayers().size() + "명" // 닉네임
+        );
+
+        checkRoomStatusAndProceed(roomId, room, uid, eliminatedPlayerCurrentTurnUid); // uid
+    }
+
+
+    public Map<String, GameRoom> getActiveGameRooms() {
+        return activeGameRooms;
+    }
+
+    // --- `handlePlayerDisconnect` 시그니처 변경 (uid) ---
+    public void handlePlayerDisconnect(String roomId, String uid) {
+        GameRoom room = activeGameRooms.get(roomId);
+        if (room == null || room.getPlayerByUid(uid) == null) {
+            System.out.println("--- [DISCONNECT] Room or Player not found. Room: " + roomId + ", User: " + uid);
+            return;
+        }
+
+        String nickname = room.getNicknameByUid(uid); // 닉네임 조회
+        System.out.println("--- [DISCONNECT] Player disconnected: " + nickname + " from room " + roomId);
+
+        GameRoom.PlayerInfo currentPlayer = room.getCurrentPlayer();
+        String disconnectedPlayerCurrentTurnUid = (currentPlayer != null) ? currentPlayer.getUid() : null; // [!!!] uid (NPE 방지)
+
+        room.removePlayer(uid); // uid
+
+        messagingTemplate.convertAndSend(
+                "/topic/game-room/" + roomId,
+                nickname + "님이 퇴장했습니다. 남은 인원: " + room.getPlayers().size() + "명" // 닉네임
+        );
+
+        checkRoomStatusAndProceed(roomId, room, uid, disconnectedPlayerCurrentTurnUid); // uid
+    }
+
+    // --- `checkRoomStatusAndProceed` 시그니처 변경 (uid) ---
+    private void checkRoomStatusAndProceed(String roomId, GameRoom room, String removedUid, String turnBeforeRemovalUid) {
+        List<GameRoom.PlayerInfo> remainingPlayers = room.getPlayers(); // PlayerInfo
+        String topic = "/topic/game-room/" + roomId;
+
+        if (remainingPlayers.isEmpty()) {
+            System.out.println("--- [ROOM REMOVE] Room is empty, removing: " + roomId);
+            activeGameRooms.remove(roomId);
+
+        } else if (remainingPlayers.stream().allMatch(GameRoom.PlayerInfo::isBot)) { // isBot 헬퍼 사용
+            System.out.println("--- [ROOM REMOVE] Only bots left, removing: " + roomId);
+            messagingTemplate.convertAndSend(topic, "모든 플레이어가 나가서 게임이 종료됩니다.");
+            activeGameRooms.remove(roomId);
+
+        } else if (remainingPlayers.size() == 1) {
+            System.out.println("--- [GAME END] Only one player left in room: " + roomId);
+            String winnerNickname = remainingPlayers.get(0).getNickname(); // 닉네임
+            messagingTemplate.convertAndSend(topic, "게임 종료! 최종 생존자: " + winnerNickname);
+
+        } else {
+            room.setLastWord(null);
+            System.out.println("--- [LAST WORD RESET] Last word set to null due to player elimination.");
+
+            GameRoom.PlayerInfo nextPlayer; // PlayerInfo
+
+            // [!!!] NPE 방지
+            if (removedUid != null && removedUid.equals(turnBeforeRemovalUid)) { // uid
+                nextPlayer = room.getNextPlayer();
+            } else {
+                nextPlayer = room.getCurrentPlayer();
+            }
+
+            if (nextPlayer == null) {
+                System.err.println("!!! ERROR in checkRoomStatusAndProceed - Next player is null.");
+                // 비정상 상태 복구 시도
+                nextPlayer = room.getNextPlayer(); // 0번 인덱스로 강제 순환
+                if(nextPlayer == null) {
+                    System.err.println("!!! CRITICAL ERROR - Cannot find next player.");
+                    return;
+                }
+            }
+
+            System.out.println("--- [TURN PROCEED] Room: " + roomId + ", Next Player: " + nextPlayer.getNickname() + " ---");
+
+            // `eliminatePlayer`에서 탈락 메시지를 이미 보냈으므로 여기서는 턴 시작만 알림
+            messagingTemplate.convertAndSend(topic,
+                    nextPlayer.getNickname() + "님부터 (아무 단어나) 다시 시작하세요."
+            );
+
+            // 다음 턴 이벤트 (uid)
+            eventPublisher.publishEvent(new TurnSuccessEvent(
+                    this,
+                    roomId,
+                    nextPlayer.getUid(),
+                    null
+            ));
+        }
+    }
+
+    // --- 두음법칙 헬퍼 (수정 불필요) ---
+    private static final char[] CHOSEONG_LIST = { 'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ' };
+    private static final char[] JUNGSEONG_LIST = { 'ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ', 'ㅙ', 'ㅚ', 'ㅛ', 'ㅜ', 'ㅝ', 'ㅞ', 'ㅟ', 'ㅠ', 'ㅡ', 'ㅢ', 'ㅣ' };
+    private static final char[] JONGSEONG_LIST = { '\0', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ' };
+    private static final int HANGUL_START = 0xAC00;
+    private static final int HANGUL_END = 0xD7A3;
+    public boolean isHangul(char c) { return c >= HANGUL_START && c <= HANGUL_END; }
+    public String getAlternativeStartChar(String lastCharStr) {
+        if (lastCharStr == null || lastCharStr.length() != 1) return null;
+        char lastChar = lastCharStr.charAt(0);
+        if (!isHangul(lastChar)) return null;
+        int base = lastChar - HANGUL_START;
+        int choseongIndex = base / (21 * 28);
+        int jungseongIndex = (base % (21 * 28)) / 28;
+        int jongseongIndex = base % 28;
+        char choseong = CHOSEONG_LIST[choseongIndex];
+        if (choseong != 'ㄹ' && choseong != 'ㄴ') return null;
+        char jungseong = JUNGSEONG_LIST[jungseongIndex];
+        int newChoseongIndex = -1;
+        if (choseong == 'ㄹ') {
+            if ("ㅣㅑㅕㅖㅛㅠㅟ".indexOf(jungseong) >= 0) newChoseongIndex = 11; // 'ㅇ'
+            else newChoseongIndex = 2; // 'ㄴ'
+        } else if (choseong == 'ㄴ') {
+            if ("ㅣㅑㅕㅖㅛㅠ".indexOf(jungseong) >= 0) newChoseongIndex = 11; // 'ㅇ'
+        }
+        if (newChoseongIndex != -1) {
+            int newCharBase = (newChoseongIndex * 21 * 28) + (jungseongIndex * 28) + jongseongIndex;
+            char newChar = (char) (HANGUL_START + newCharBase);
+            return String.valueOf(newChar);
+        }
+        return null;
     }
 }
-
-

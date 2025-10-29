@@ -8,6 +8,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 @Service
 @RequiredArgsConstructor
 public class DictionaryBotService {
@@ -18,15 +20,23 @@ public class DictionaryBotService {
     @EventListener // WordValidationRequestEvent 이벤트가 발생하면 이 메서드 실행
     public void onWordValidationRequest(WordValidationRequestEvent event) {
 
-        // 1. 봇이 API를 호출해 단어 검증 (시간이 걸릴 수 있음)
-        boolean isValid = koreanApiService.validateWord(event.getWord());
+        // --- [!!!] 여기가 수정됩니다 (API 결과 Map 처리) ---
 
-        // 2. 검증이 끝나면, GameRoomService의 콜백 메서드를 호출해 결과 전달
+        // 1. API 호출 (이제 Map 반환)
+        Map<String, Object> validationResult = koreanApiService.validateWord(event.getWord());
+
+        // 2. Map에서 값 추출
+        boolean isValid = (Boolean) validationResult.getOrDefault("isValid", false);
+        String definition = (String) validationResult.get("definition"); // 실패 시 null
+
+        // 3. GameRoomService 콜백 호출 시 definition 추가
         gameRoomService.processValidationResult(
                 event.getRoomId(),
                 event.getUserId(),
                 event.getWord(),
-                isValid
+                isValid,
+                definition // [!!!] 추출된 definition 전달
         );
+        // --- [!!!] 수정 끝 ---
     }
 }

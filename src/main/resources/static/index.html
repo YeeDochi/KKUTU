@@ -1,185 +1,198 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>끄투 - 로비/게임 테스트</title>
+    <title>끄투 온라인</title>
     <meta charset="UTF-8">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
     <style>
-        body { font-family: sans-serif; }
-        #lobby, #gameRoom { border: 2px solid #ccc; padding: 10px; margin-bottom: 10px; }
-        .lobby-section { border-top: 1px solid #eee; padding-top: 10px; margin-top: 10px; }
-        #gameRoom { display: none; } /* 게임방은 일단 숨김 */
-        #messages, #errors { border: 1px solid #eee; min-height: 50px; background: #f9f9f9; padding: 5px; }
-        #errors { color: red; }
+        /* ...(스타일은 변경 없음)... */
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #121212; /* 어두운 배경 */
+            color: #e0e0e0; /* 밝은 글자색 */
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6; /* 줄 간격 추가 */
+        }
+        .container {
+            width: 90%;
+            max-width: 700px;
+            background-color: #1e1e1e; /* 컨테이너 배경색 (body보다 약간 밝게) */
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3); /* 그림자 약간 조정 */
+        }
+        /* 로비/게임방 공통 스타일 (테두리, 배경 제거) */
+        #lobby, #gameRoom {
+            border: none;
+            padding: 0;
+            margin-bottom: 0;
+            background-color: transparent;
+        }
+        /* 게임방 숨김 */
+        #gameRoom { display: none; }
+
+        /* 제목 스타일 */
+        h1, h2, h3 {
+            color: #bb86fc; /* 다크 모드 강조색 (보라색 계열) */
+            border-bottom: 1px solid #333; /* 구분선 추가 */
+            padding-bottom: 5px;
+        }
+        h1 { text-align: center; border-bottom: none; }
+
+        /* 라벨 스타일 */
+        label {
+            display: inline-block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #bdbdbd; /* 약간 밝은 회색 */
+        }
+
+        /* 입력창 스타일 */
+        input[type="text"], input[type="number"] {
+            width: calc(100% - 22px); /* padding 고려 */
+            margin-bottom: 15px; /* 간격 증가 */
+            padding: 10px;
+            border: 1px solid #444; /* 어두운 테두리 */
+            border-radius: 4px;
+            background-color: #2c2c2c; /* 입력창 배경 */
+            color: #e0e0e0; /* 입력창 글자색 */
+        }
+        input::placeholder { color: #888; } /* 플레이스홀더 색상 */
+
+        /* 버튼 기본 스타일 */
+        button {
+            padding: 10px 20px;
+            background-color: #3700b3; /* 기본 버튼 색상 (보라색 계열) */
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+            transition: background-color 0.2s;
+        }
+        button:hover { background-color: #6200ee; } /* 호버 시 밝게 */
+        button:disabled { /* 비활성화 시 스타일 */
+            background-color: #444;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        /* 특정 버튼 스타일 */
+        #refreshRoomListBtn { font-size: 0.8em; padding: 5px 10px; background-color: #03dac6; color: #121212; } /* 새로고침: 밝은 청록색 */
+        #refreshRoomListBtn:hover { background-color: #3fffe3; }
+        #leaveRoomBtn { background-color: #cf6679; } /* 나가기: 밝은 빨강 */
+        #leaveRoomBtn:hover { background-color: #ff8a80; }
+        #forfeitBtn { background-color: #fdd835; color: #121212; } /* 포기: 노란색 */
+        #forfeitBtn:hover { background-color: #fff176; }
+
+        /* 채팅/에러 출력 영역 */
+        #chatOutput, #errorOutput {
+            border: 1px solid #333; /* 테두리 색상 */
+            min-height: 150px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: #2a2a2a; /* 배경색 */
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            color: #ccc; /* 내부 글자색 */
+        }
+        #chatOutput p, #errorOutput p { margin: 5px 0; font-size: 0.9em; }
+        #chatOutput p:first-child { color: #fff; font-weight: bold; } /* 최신 메시지 강조 */
+        #errorOutput p { color: #ff8a80; } /* 에러 메시지 색상 */
+
+        /* 로비 방 목록 */
+        #roomListOutput {
+            min-height: 100px;
+            border: 1px solid #333;
+            padding: 10px;
+            background: #2a2a2a;
+            border-radius: 4px;
+            color: #ccc;
+        }
+        #roomListOutput li { /* 방 목록 항목 스타일 */
+            margin-bottom: 10px; padding: 10px; border: 1px solid #444; border-radius: 4px;
+            display: flex; justify-content: space-between; align-items: center;
+            background-color: #333; /* 목록 항목 배경 */
+        }
+        #roomListOutput li span { color: #e0e0e0; } /* 방 정보 글자색 */
+        #roomListOutput button { background-color: #03dac6; color: #121212; padding: 5px 10px; } /* 참가 버튼 */
+        #roomListOutput button:hover { background-color: #3fffe3; }
+
+        /* 구분선 */
+        hr { border: 0; border-top: 1px solid #333; margin: 25px 0; }
+
+        /* 게임방 단어 입력 영역 */
+        #gameRoom .input-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        #wordInput {
+            flex-grow: 1;
+            margin-bottom: 0;
+        }
+        #sendWordBtn, #forfeitBtn {
+            flex-shrink: 0;
+        }
+        /* 타이머 영역 */
+        #timerDisplay { margin-top: 15px; font-size: 1.2em; font-weight: bold; color: #bb86fc; text-align: center; }
+
     </style>
 </head>
 <body>
-<h2>끄투 온라인 백엔드 테스트</h2>
+<div class="container">
+    <h1>끄투 온라인</h1>
 
-<div id="lobby">
-    <h3>로비</h3>
-    <strong>내 유저 ID:</strong> <input type="text" id="userId" value="Player1">
-    <hr>
+    <div id="lobby">
+        <h2>로비</h2>
+        <div>
+            <label for="nickname">내 닉네임:</label>
+            <input type="text" id="nickname" value="익명">
+        </div>
+        <hr>
 
-    <div class="lobby-section">
-        <h4>1. 새 방 만들기</h4>
-        <input type="text" id="roomName" value="새 게임방"> (방 제목) <br>
-        <input type="number" id="maxPlayers" value="4"> (최대 인원) <br>
-        <input type="number" id="botCount" value="1"> (봇 수) <br>
-        <button id="createRoomButton">방 만들고 참가하기</button>
+        <div class="lobby-section">
+            <h3>새 방 만들기</h3>
+            <label for="roomName">방 제목:</label>
+            <input type="text" id="roomName" value="즐겜방"> <br>
+            <label for="maxPlayers">최대 인원:</label>
+            <input type="number" id="maxPlayers" value="4" min="2" max="8"> <br>
+            <label for="botCount">봇 수:</label>
+            <input type="number" id="botCount" value="1" min="0" max="7"> <br>
+            <button id="createRoomBtn">방 만들고 참가하기</button>
+        </div>
+        <div class="lobby-section">
+            <h3>기존 방 참가하기</h3>
+            <h3>방 목록 <button id="refreshRoomListBtn" style="font-size: 0.8em; padding: 5px 10px;">새로고침</button></h3>
+            <div id="roomListOutput" style="min-height: 100px; border: 1px solid #eee; padding: 10px; background: #fff; border-radius: 4px;">
+            </div>
+            <label for="joinRoomId">방 ID:</label>
+            <input type="text" id="joinRoomId" placeholder="참가할 방 ID 입력"> <br>
+            <button id="joinRoomBtn">참가하기</button>
+        </div>
     </div>
 
-    <div class="lobby-section">
-        <h4>2. 기존 방 참가하기</h4>
-        <input type="text" id="joinRoomId" placeholder="참가할 방 ID를 입력하세요"> (방 ID) <br>
-        <button id="joinRoomButton">참가하기</button>
+    <div id="gameRoom">
+        <h2 id="roomTitle">게임방</h2>
+        <div id="errorOutput"></div>
+        <div id="chatOutput"></div>
+        <div id="timerDisplay" style="margin-top: 10px; font-size: 1.2em; font-weight: bold;"></div>
+        <div>
+            <input type="text" id="wordInput" placeholder="단어 입력..." style="width: 70%;">
+            <button id="sendWordBtn">전송</button>
+
+            <button id="forfeitBtn" style="background-color: #ffc107; color: #333;">포기</button>
+        </div>
+        <button id="leaveRoomBtn" style="margin-top: 10px; background-color: #dc3545;">방 나가기</button>
     </div>
 </div>
 
-<div id="gameRoom">
-    <h3 id="roomTitle"></h3>
-    <div>
-        <input type="text" id="wordInput" placeholder="단어 입력 (예: 사과)">
-        <button id="sendButton">단어 전송</button>
-    </div>
-    <hr>
-    <h4>오류 메시지 (나만 보임):</h4>
-    <div id="errors"></div>
-    <h4>게임 로그 (모두가 봄):</h4>
-    <div id="messages"></div>
-</div>
-
-<script>
-    // --- 전역 변수 ---
-    let stompClient = null;
-    let currentRoomId = null;
-    let myUserId = null;
-
-    // --- DOM 요소 ---
-    const lobbyDiv = document.getElementById('lobby');
-    const gameRoomDiv = document.getElementById('gameRoom');
-    const createButton = document.getElementById('createRoomButton');
-    const joinButton = document.getElementById('joinRoomButton');
-    const sendButton = document.getElementById('sendButton');
-    const messagesDiv = document.getElementById('messages');
-    const errorsDiv = document.getElementById('errors');
-
-    // --- 1. 방 생성 버튼 클릭 ---
-    createButton.onclick = async function() {
-        myUserId = document.getElementById('userId').value;
-        const roomName = document.getElementById('roomName').value;
-        const maxPlayers = parseInt(document.getElementById('maxPlayers').value, 10);
-        const botCount = parseInt(document.getElementById('botCount').value, 10);
-
-        if (!myUserId || !roomName) {
-            alert("유저 ID와 방 제목을 입력하세요.");
-            return;
-        }
-
-        try {
-            logToScreen(`방 생성 요청 중...`, messagesDiv);
-            const response = await fetch('/api/rooms', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    roomName: roomName,
-                    maxPlayers: maxPlayers,
-                    botCount: botCount
-                })
-            });
-
-            if (!response.ok) throw new Error('방 생성 실패 (서버 응답 오류)');
-
-            const room = await response.json();
-            currentRoomId = room.roomId;
-
-            logToScreen(`방 생성 성공 (ID: ${currentRoomId}). WebSocket 연결 시도...`, messagesDiv);
-            connectAndJoin();
-
-        } catch (error) {
-            logToScreen(`오류: ${error.message}`, errorsDiv);
-        }
-    };
-
-    // --- 2. 방 참가 버튼 클릭 ---
-    joinButton.onclick = function() {
-        myUserId = document.getElementById('userId').value;
-        currentRoomId = document.getElementById('joinRoomId').value;
-
-        if (!myUserId || !currentRoomId) {
-            alert("유저 ID와 참가할 방 ID를 모두 입력하세요.");
-            return;
-        }
-
-        logToScreen(`방 (${currentRoomId}) 참가 시도... WebSocket 연결 시작...`, messagesDiv);
-        connectAndJoin();
-    };
-
-    // --- 3. WebSocket 연결 및 방 참가 (공용 함수) ---
-    function connectAndJoin() {
-        lobbyDiv.style.display = 'none';
-        gameRoomDiv.style.display = 'block';
-        document.getElementById('roomTitle').innerText = `게임방 ID: ${currentRoomId}`;
-        errorsDiv.innerHTML = "";
-        messagesDiv.innerHTML = "";
-
-        const socket = new SockJS('/ws');
-        stompClient = Stomp.over(socket);
-
-        stompClient.connect({},
-            function (frame) {
-                logToScreen('STOMP 연결 성공!', messagesDiv);
-
-                stompClient.subscribe('/topic/game-room/' + currentRoomId, function (message) {
-                    logToScreen(message.body, messagesDiv);
-                });
-
-                stompClient.subscribe('/user/queue/errors', function (message) {
-                    logToScreen(message.body, errorsDiv);
-                });
-
-                stompClient.send("/app/game/" + currentRoomId + "/join",
-                    {},
-                    JSON.stringify({ userId: myUserId })
-                );
-            },
-            function (error) {
-                logToScreen('STOMP 연결 실패: ' + error, errorsDiv);
-                lobbyDiv.style.display = 'block';
-                gameRoomDiv.style.display = 'none';
-            }
-        );
-    }
-
-    // --- 4. 단어 전송 버튼 클릭 ---
-    sendButton.onclick = function() {
-        const word = document.getElementById('wordInput').value;
-        if (word && stompClient && currentRoomId) {
-
-            stompClient.send("/app/game/" + currentRoomId + "/word",
-                {},
-                JSON.stringify({ word: word, userId: myUserId })
-            );
-            document.getElementById('wordInput').value = '';
-        }
-    };
-    document.getElementById('wordInput').addEventListener('keydown', function(event) {
-        // Enter 키가 눌렸는지 확인 (keyCode 13 == Enter)
-        if (event.key === 'Enter' || event.keyCode === 13) {
-            // Enter 키의 기본 동작(예: 줄바꿈)을 막음
-            event.preventDefault();
-            // '단어 전송' 버튼 클릭 함수를 직접 호출
-            sendButton.onclick();
-        }
-    });
-
-    // --- 유틸: 화면에 로그 찍기 ---
-    function logToScreen(message, targetDiv) {
-        // [!!!] 이 부분이 수정되었습니다 (따옴표 오류 수정)
-        targetDiv.innerHTML = "<p>" + message + "</p>" + targetDiv.innerHTML;
-    }
-</script>
-
+<script src="app.js"></script>
 </body>
 </html>

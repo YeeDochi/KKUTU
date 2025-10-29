@@ -6,15 +6,14 @@ services:
     image: kkutu-app
     ports:
       - "8080:8080"
-    # [수정] depends_on을 더 상세하게 설정
     depends_on:
-      db: # 'db' 서비스에 대해
-        condition: service_healthy # 아래 정의된 healthcheck가 'healthy' 상태가 될 때까지 기다림
+      db:
+        condition: service_healthy
     environment:
       - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/kkutu_db?characterEncoding=UTF-8
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - SPRING_JPA_HIBERNATE_DDL_AUTO=update # 테이블 자동 생성/업데이트
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - API_KEY_KOREAN=${API_KEY_KOREAN}
 
   db:
@@ -29,10 +28,13 @@ services:
       - ./db-init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
-      interval: 10s # 10초마다 체크
-      timeout: 10s   # 5초 안에 응답 없으면 실패
-      retries: 5    # 5번 재시도
-      start_period: 60s # 컨테이너 시작 후 30초 뒤부터 체크 시작
-
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    command:
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    # 또는 utf8mb4_bin (이전 설정이 bin이었으면 bin으로)
 volumes:
   mysql-data:
