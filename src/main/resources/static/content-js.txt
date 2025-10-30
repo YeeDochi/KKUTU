@@ -1,4 +1,4 @@
-// app.js (클라이언트 UID 생성 방식으로 복구)
+// game.js (클라이언트 UID 생성 방식으로 복구)
 
 // --- 전역 변수 ---
 let stompClient = null;
