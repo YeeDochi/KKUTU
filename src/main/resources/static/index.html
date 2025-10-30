@@ -1,198 +1,268 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
-    <title>끄투 온라인</title>
     <meta charset="UTF-8">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <title>Kkutu-Online (Dev Environment)</title>
     <style>
-        /* ...(스타일은 변경 없음)... */
-        body {
-            font-family: 'Malgun Gothic', sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-color: #121212; /* 어두운 배경 */
-            color: #e0e0e0; /* 밝은 글자색 */
+        /* --- 기본 설정 --- */
+        body, html {
             margin: 0;
-            padding: 20px;
-            line-height: 1.6; /* 줄 간격 추가 */
-        }
-        .container {
-            width: 90%;
-            max-width: 700px;
-            background-color: #1e1e1e; /* 컨테이너 배경색 (body보다 약간 밝게) */
-            padding: 25px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3); /* 그림자 약간 조정 */
-        }
-        /* 로비/게임방 공통 스타일 (테두리, 배경 제거) */
-        #lobby, #gameRoom {
-            border: none;
             padding: 0;
-            margin-bottom: 0;
-            background-color: transparent;
-        }
-        /* 게임방 숨김 */
-        #gameRoom { display: none; }
-
-        /* 제목 스타일 */
-        h1, h2, h3 {
-            color: #bb86fc; /* 다크 모드 강조색 (보라색 계열) */
-            border-bottom: 1px solid #333; /* 구분선 추가 */
-            padding-bottom: 5px;
-        }
-        h1 { text-align: center; border-bottom: none; }
-
-        /* 라벨 스타일 */
-        label {
-            display: inline-block;
-            margin-bottom: 5px;
-            font-weight: bold;
-            color: #bdbdbd; /* 약간 밝은 회색 */
+            height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            overflow: hidden;
         }
 
-        /* 입력창 스타일 */
-        input[type="text"], input[type="number"] {
-            width: calc(100% - 22px); /* padding 고려 */
-            margin-bottom: 15px; /* 간격 증가 */
-            padding: 10px;
-            border: 1px solid #444; /* 어두운 테두리 */
-            border-radius: 4px;
-            background-color: #2c2c2c; /* 입력창 배경 */
-            color: #e0e0e0; /* 입력창 글자색 */
-        }
-        input::placeholder { color: #888; } /* 플레이스홀더 색상 */
+        /* --- IDE 전체 레이아웃 --- */
+        .ide-container { display: flex; height: 100vh; }
 
-        /* 버튼 기본 스타일 */
-        button {
-            padding: 10px 20px;
-            background-color: #3700b3; /* 기본 버튼 색상 (보라색 계열) */
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 5px;
-            transition: background-color 0.2s;
-        }
-        button:hover { background-color: #6200ee; } /* 호버 시 밝게 */
-        button:disabled { /* 비활성화 시 스타일 */
-            background-color: #444;
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-
-        /* 특정 버튼 스타일 */
-        #refreshRoomListBtn { font-size: 0.8em; padding: 5px 10px; background-color: #03dac6; color: #121212; } /* 새로고침: 밝은 청록색 */
-        #refreshRoomListBtn:hover { background-color: #3fffe3; }
-        #leaveRoomBtn { background-color: #cf6679; } /* 나가기: 밝은 빨강 */
-        #leaveRoomBtn:hover { background-color: #ff8a80; }
-        #forfeitBtn { background-color: #fdd835; color: #121212; } /* 포기: 노란색 */
-        #forfeitBtn:hover { background-color: #fff176; }
-
-        /* 채팅/에러 출력 영역 */
-        #chatOutput, #errorOutput {
-            border: 1px solid #333; /* 테두리 색상 */
-            min-height: 150px;
-            max-height: 300px;
-            overflow-y: auto;
-            background: #2a2a2a; /* 배경색 */
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 4px;
-            color: #ccc; /* 내부 글자색 */
-        }
-        #chatOutput p, #errorOutput p { margin: 5px 0; font-size: 0.9em; }
-        #chatOutput p:first-child { color: #fff; font-weight: bold; } /* 최신 메시지 강조 */
-        #errorOutput p { color: #ff8a80; } /* 에러 메시지 색상 */
-
-        /* 로비 방 목록 */
-        #roomListOutput {
-            min-height: 100px;
-            border: 1px solid #333;
-            padding: 10px;
-            background: #2a2a2a;
-            border-radius: 4px;
-            color: #ccc;
-        }
-        #roomListOutput li { /* 방 목록 항목 스타일 */
-            margin-bottom: 10px; padding: 10px; border: 1px solid #444; border-radius: 4px;
-            display: flex; justify-content: space-between; align-items: center;
-            background-color: #333; /* 목록 항목 배경 */
-        }
-        #roomListOutput li span { color: #e0e0e0; } /* 방 정보 글자색 */
-        #roomListOutput button { background-color: #03dac6; color: #121212; padding: 5px 10px; } /* 참가 버튼 */
-        #roomListOutput button:hover { background-color: #3fffe3; }
-
-        /* 구분선 */
-        hr { border: 0; border-top: 1px solid #333; margin: 25px 0; }
-
-        /* 게임방 단어 입력 영역 */
-        #gameRoom .input-area {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        #wordInput {
-            flex-grow: 1;
-            margin-bottom: 0;
-        }
-        #sendWordBtn, #forfeitBtn {
+        /* --- 1. 사이드바 --- */
+        .sidebar {
+            width: 200px;
+            background-color: #252526;
+            padding: 15px;
+            box-sizing: border-box;
+            border-right: 1px solid #333333;
             flex-shrink: 0;
         }
-        /* 타이머 영역 */
-        #timerDisplay { margin-top: 15px; font-size: 1.2em; font-weight: bold; color: #bb86fc; text-align: center; }
+        .sidebar h3 {
+            font-size: 14px;
+            color: #cccccc;
+            margin: 0 0 10px 0;
+            text-transform: uppercase;
+        }
+        .file-tree { list-style: none; padding-left: 0; margin: 0; }
+        .file-tree li {
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .file-tree li:hover { background-color: #2a2d2e; }
+        .file-tree li.active-file { /* 활성화된 파일 */
+            background-color: #37373d;
+            color: #fff;
+            font-weight: bold;
+        }
+        .file-tree .icon { margin-right: 8px; }
 
+        /* --- 2. 메인 컨텐츠 (에디터 + 터미널) --- */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- 2a. 에디터 탭 --- */
+        .editor-tabs {
+            display: flex;
+            background-color: #2d2d2d;
+            flex-shrink: 0;
+        }
+        .tab {
+            display: none; /* 기본 숨김 */
+            padding: 10px 15px;
+            background-color: #2d2d2d;
+            border-right: 1px solid #252526;
+            font-size: 14px;
+            color: #9e9e9e;
+        }
+        .tab.active-tab { /* 활성화된 탭만 보임 */
+            display: block;
+            background-color: #1e1e1e;
+            color: #ffffff;
+        }
+
+        /* --- 2b. 에디터 창 --- */
+        .editor-pane {
+            flex-grow: 1;
+            background-color: #1e1e1e;
+            position: relative; /* 자식 요소의 기준점 */
+        }
+
+        /* [핵심] 컨텐츠 창 (게임/코드) */
+        .content-pane {
+            display: none; /* 모든 창을 일단 숨김 */
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+        }
+        .content-pane.active {
+            display: block; /* 활성화된 창만 보여줌 */
+        }
+
+        /* IFrame 스타일 */
+        #preview-content-pane iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background-color: #000000;
+        }
+
+        /* 코드 보기 스타일 */
+        .code-view-pane pre {
+            margin: 0;
+            padding: 10px;
+        }
+        .code-view-pane code {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre;
+            color: #d4d4d4;
+        }
+
+        /* --- 2c. 터미널 창 (장식용) --- */
+        .terminal-pane {
+            height: 150px;
+            background-color: #181818;
+            border-top: 1px solid #333333;
+            flex-shrink: 0;
+            padding: 10px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
+        .terminal-pane .terminal-header {
+            font-size: 14px;
+            color: #bbbbbb;
+            margin-bottom: 10px;
+        }
+        .terminal-pane p { margin: 0 0 5px 0; font-size: 14px; }
+        .terminal-pane .prompt { color: #61afef; }
+        .terminal-pane .success { color: #98c379; }
     </style>
 </head>
 <body>
-<div class="container">
-    <h1>끄투 온라인</h1>
 
-    <div id="lobby">
-        <h2>로비</h2>
-        <div>
-            <label for="nickname">내 닉네임:</label>
-            <input type="text" id="nickname" value="익명">
-        </div>
-        <hr>
+<div class="ide-container">
 
-        <div class="lobby-section">
-            <h3>새 방 만들기</h3>
-            <label for="roomName">방 제목:</label>
-            <input type="text" id="roomName" value="즐겜방"> <br>
-            <label for="maxPlayers">최대 인원:</label>
-            <input type="number" id="maxPlayers" value="4" min="2" max="8"> <br>
-            <label for="botCount">봇 수:</label>
-            <input type="number" id="botCount" value="1" min="0" max="7"> <br>
-            <button id="createRoomBtn">방 만들고 참가하기</button>
-        </div>
-        <div class="lobby-section">
-            <h3>기존 방 참가하기</h3>
-            <h3>방 목록 <button id="refreshRoomListBtn" style="font-size: 0.8em; padding: 5px 10px;">새로고침</button></h3>
-            <div id="roomListOutput" style="min-height: 100px; border: 1px solid #eee; padding: 10px; background: #fff; border-radius: 4px;">
-            </div>
-            <label for="joinRoomId">방 ID:</label>
-            <input type="text" id="joinRoomId" placeholder="참가할 방 ID 입력"> <br>
-            <button id="joinRoomBtn">참가하기</button>
-        </div>
+    <!-- 1. 사이드바 -->
+    <div class="sidebar">
+        <h3>Explorer</h3>
+        <ul class="file-tree">
+            <li><span class="icon">📁</span> Kkutu-Online</li>
+            <!--
+              [핵심] data-tab 속성으로 어떤 탭과 컨텐츠를 활성화할지 지정합니다.
+            -->
+            <li class="file-item active-file" data-tab="preview">
+                <span class="icon" style="margin-left: 15px;">▶️</span> game.html [Preview]
+            </li>
+            <li class="file-item" data-tab="html-code">
+                <span class="icon" style="margin-left: 15px;">📄</span> game.html [Code]
+            </li>
+            <li class="file-item" data-tab="js-code">
+                <span class="icon" style="margin-left: 15px;">📄</span> game.js [Code]
+            </li>
+        </ul>
     </div>
 
-    <div id="gameRoom">
-        <h2 id="roomTitle">게임방</h2>
-        <div id="errorOutput"></div>
-        <div id="chatOutput"></div>
-        <div id="timerDisplay" style="margin-top: 10px; font-size: 1.2em; font-weight: bold;"></div>
-        <div>
-            <input type="text" id="wordInput" placeholder="단어 입력..." style="width: 70%;">
-            <button id="sendWordBtn">전송</button>
+    <!-- 2. 메인 컨텐츠 영역 -->
+    <div class="main-content">
 
-            <button id="forfeitBtn" style="background-color: #ffc107; color: #333;">포기</button>
+        <!-- 2a. 에디터 탭 (이제 JS가 제어) -->
+        <div class="editor-tabs">
+            <div class="tab active-tab" data-tab="preview"><span class="icon">▶️</span> game.html [Preview]</div>
+            <div class="tab" data-tab="html-code"><span class="icon">📄</span> game.html [Code]</div>
+            <div class="tab" data-tab="js-code"><span class="icon">📄</span> game.js [Code]</div>
         </div>
-        <button id="leaveRoomBtn" style="margin-top: 10px; background-color: #dc3545;">방 나가기</button>
+
+        <!-- 2b. 에디터 창 -->
+        <div class="editor-pane">
+            <!-- 게임 실행 창 (기본 활성화) -->
+            <div id="preview-content-pane" class="content-pane active">
+                <iframe src="game.html" title="Kkutu Game"></iframe>
+            </div>
+
+            <!-- game.html 코드 보기 창 (숨겨짐) -->
+            <div id="html-code-content-pane" class="content-pane code-view-pane">
+                <pre><code><!-- content-html.txt 로드 중... --></code></pre>
+            </div>
+
+            <!-- game.js 코드 보기 창 (숨겨짐) -->
+            <div id="js-code-content-pane" class="content-pane code-view-pane">
+                <pre><code><!-- content-js.txt 로드 중... --></code></pre>
+            </div>
+        </div>
+
+        <!-- 2c. 터미널 창 (장식용) -->
+        <div class="terminal-pane">
+            <div class="terminal-header">TERMINAL</div>
+            <p><span class="prompt">C:\Projects\Kkutu-Online&gt;</span> npm run dev</p>
+            <p><span class="success">  ➜  Local:   http://localhost:5173/</span></p>
+            <p><span class="success">  ➜  Running game.html in preview mode.</span></p>
+            <p><span class="success">  ➜  Click files in explorer to view code.</span></p>
+        </div>
     </div>
 </div>
 
-<script src="app.js"></script>
+<!-- [핵심] 탭 전환 및 코드 로딩을 위한 스크립트 -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- 1. 코드 파일(.txt)을 비동기로 불러와 <pre> 태그에 삽입 ---
+        loadCodeFiles();
+
+        // --- 2. 탭 전환 로직 설정 ---
+        setupTabSwitching();
+    });
+
+    async function loadCodeFiles() {
+        try {
+            // 두 개의 텍스트 파일을 동시에 불러옵니다.
+            const [htmlRes, jsRes] = await Promise.all([
+                fetch('content-html.txt'),
+                fetch('content-js.txt')
+            ]);
+
+            if (!htmlRes.ok) throw new Error('content-html.txt 로드 실패');
+            if (!jsRes.ok) throw new Error('content-js.txt 로드 실패');
+
+            const htmlCode = await htmlRes.text();
+            const jsCode = await jsRes.text();
+
+            // 불러온 코드를 텍스트로 삽입
+            document.querySelector('#html-code-content-pane pre code').textContent = htmlCode;
+            document.querySelector('#js-code-content-pane pre code').textContent = jsCode;
+
+        } catch (error) {
+            console.error("코드 파일 로딩 오류:", error);
+            document.querySelector('#html-code-content-pane pre code').textContent = `오류: ${error.message}`;
+            document.querySelector('#js-code-content-pane pre code').textContent = `오류: ${error.message}`;
+        }
+    }
+
+    function setupTabSwitching() {
+        const fileItems = document.querySelectorAll('.file-item');
+        const tabs = document.querySelectorAll('.tab');
+        const contentPanes = document.querySelectorAll('.content-pane');
+
+        fileItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                const targetId = e.currentTarget.dataset.tab; // 예: "preview", "html-code", "js-code"
+
+                // 1. 모든 'active' 클래스 제거
+                fileItems.forEach(f => f.classList.remove('active-file'));
+                tabs.forEach(t => t.classList.remove('active-tab'));
+                contentPanes.forEach(c => c.classList.remove('active'));
+
+                // 2. 클릭된 파일과 일치하는 요소들에 'active' 클래스 추가
+
+                // 사이드바 파일
+                e.currentTarget.classList.add('active-file');
+
+                // 상단 탭
+                const activeTab = document.querySelector(`.tab[data-tab="${targetId}"]`);
+                if (activeTab) activeTab.classList.add('active-tab');
+
+                // 메인 컨텐츠 창
+                const activePane = document.getElementById(`${targetId}-content-pane`);
+                if (activePane) activePane.classList.add('active');
+            });
+        });
+    }
+</script>
+
 </body>
 </html>
+

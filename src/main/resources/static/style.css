@@ -1,0 +1,138 @@
+/* --- 기본 설정 --- */
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    overflow: hidden; /* 스크롤 방지 */
+}
+
+/* --- IDE 전체 레이아웃 --- */
+.ide-container {
+    display: flex;
+    height: 100vh;
+}
+
+/* --- 1. 사이드바 (파일 탐색기) --- */
+.sidebar {
+    width: 250px;
+    background-color: #252526;
+    padding: 15px;
+    box-sizing: border-box; /* 패딩 포함 크기 계산 */
+    border-right: 1px solid #333333;
+    flex-shrink: 0; /* 창 크기 줄어도 너비 유지 */
+}
+.sidebar h3 {
+    font-size: 14px;
+    color: #cccccc;
+    margin: 0 0 10px 0;
+    text-transform: uppercase;
+}
+.file-tree {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+.file-tree li {
+    padding: 5px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.file-tree li:hover {
+    background-color: #2a2d2e;
+}
+.file-tree li.active-file {
+    background-color: #37373d;
+}
+.file-tree .icon {
+    margin-right: 8px;
+}
+
+/* --- 2. 메인 컨텐츠 (에디터 + 터미널) --- */
+.main-content {
+    flex-grow: 1; /* 남은 공간 모두 차지 */
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- 2a. 에디터 탭 --- */
+.editor-tabs {
+    display: flex;
+    background-color: #2d2d2d;
+    flex-shrink: 0;
+}
+.tab {
+    padding: 10px 15px;
+    background-color: #2d2d2d;
+    border-right: 1px solid #252526;
+    cursor: pointer;
+    font-size: 14px;
+    color: #9e9e9e;
+}
+.tab.active-tab {
+    background-color: #1e1e1e; /* 에디터 배경색과 동일하게 */
+    color: #ffffff;
+}
+
+/* --- 2b. 에디터 창 --- */
+.editor-pane {
+    flex-grow: 1; /* 탭과 터미널 제외한 모든 공간 차지 */
+    background-color: #1e1e1e;
+    overflow: auto; /* 코드 길어지면 스크롤 */
+}
+/* <pre> 태그가 코드 내용을 보여줌 */
+.code-content {
+    display: none; /* 기본 숨김 */
+    margin: 0;
+}
+.code-content.active-content {
+    display: block; /* 활성화된 탭의 코드만 보여줌 */
+}
+.code-content pre {
+    margin: 0;
+    padding: 10px;
+}
+.code-content code {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 14px;
+    white-space: pre; /* 공백/줄바꿈 유지 */
+}
+
+/* --- 2c. 터미널 창 --- */
+.terminal-pane {
+    height: 200px; /* 고정 높이 */
+    background-color: #181818;
+    border-top: 1px solid #333333;
+    flex-shrink: 0;
+    padding: 10px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Courier New', monospace;
+}
+.terminal-pane .terminal-header {
+    font-size: 14px;
+    color: #bbbbbb;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #252526;
+    margin-bottom: 10px;
+}
+.terminal-pane p {
+    margin: 0;
+    font-size: 14px;
+}
+.terminal-pane .prompt {
+    color: #61afef; /* 프롬프트 경로 색상 */
+}
+.terminal-pane .cursor {
+    width: 8px;
+    height: 16px;
+    background: #d4d4d4;
+    display: inline-block;
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+}
+@keyframes blink {
+    50% { opacity: 0; }
+}
