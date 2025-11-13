@@ -50,7 +50,7 @@ public class AiPlayerService {
             String chosenWord = null;
             String chosenDefinition = null;
             try {
-                // 두음법칙 적용 (변경 없음)
+                // 두음법칙 적용
                 String alternativeLetter = gameRoomService.getAlternativeStartChar(startingLetter);
                 List<WordEntity> potentialWords = new ArrayList<>(wordRepository.findValidWords(startingLetter, "명사"));
                 if (alternativeLetter != null) {
@@ -62,35 +62,30 @@ public class AiPlayerService {
                 System.out.println(">>> AI BOT(" + nextPlayerUid + ") JPA Potential Words (Total): " + potentialWords.size());
 
                 if (!potentialWords.isEmpty()) {
-                    // --- [!!!] 여기가 수정됩니다 (검증 결과 Map 처리) ---
                     for (WordEntity wordEntity : potentialWords) {
                         String potentialWord = wordEntity.getName();
 
-                        // [!!!] validateWordSynchronously 호출 (이제 Map 반환)
                         Map<String, Object> validationResult = gameRoomService.validateWordSynchronously(
                                 event.getRoomId(), potentialWord, nextPlayerUid);
 
-                        // [!!!] Map에서 boolean 값 추출
                         boolean isValid = (Boolean) validationResult.getOrDefault("isValid", false);
 
                         if (isValid) {
                             chosenWord = potentialWord;
-                            chosenDefinition = (String) validationResult.get("definition"); // [!!!] 뜻 저장
-                            // --- [!!!] ---
+                            chosenDefinition = (String) validationResult.get("definition");
                             System.out.println("--- AI BOT(" + nextPlayerUid + ") validation PASSED for: [" + chosenWord + "]");
                             break;
                         } else {
                             System.out.println("--- AI BOT(" + nextPlayerUid + ") validation FAILED for: [" + potentialWord + "], trying next...");
                         }
                     }
-                    // --- [!!!] 수정 끝 ---
                 }
             } catch (Exception e) {
                 System.err.println("!!! AI BOT(" + nextPlayerUid + ") Error during DB query/validation loop: " + e.getMessage());
                 e.printStackTrace();
             }
 
-            // 제출 로직 (변경 없음)
+            // 제출 로직
             if (chosenWord != null) {
                 System.out.println("<<< AI BOT(" + nextPlayerUid + ") finally submitting word: [" + chosenWord + "]");
                 gameRoomService.handleWordSubmission(

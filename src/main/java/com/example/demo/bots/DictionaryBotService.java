@@ -16,13 +16,12 @@ public class DictionaryBotService {
     private final KoreanApiService koreanApiService;
     private final GameRoomService gameRoomService; // 결과 콜백용
 
-    @Async // [핵심] 이 메서드를 별도 스레드 풀에서 비동기 실행
+    @Async //별도 스레드 풀에서 비동기 실행
     @EventListener // WordValidationRequestEvent 이벤트가 발생하면 이 메서드 실행
     public void onWordValidationRequest(WordValidationRequestEvent event) {
+        
 
-        // --- [!!!] 여기가 수정됩니다 (API 결과 Map 처리) ---
-
-        // 1. API 호출 (이제 Map 반환)
+        // 1. 국어원 API 호출
         Map<String, Object> validationResult = koreanApiService.validateWord(event.getWord());
 
         // 2. Map에서 값 추출
@@ -35,8 +34,7 @@ public class DictionaryBotService {
                 event.getUserId(),
                 event.getWord(),
                 isValid,
-                definition // [!!!] 추출된 definition 전달
+                definition // [!!!] 추출된 뜻 전달
         );
-        // --- [!!!] 수정 끝 ---
     }
 }

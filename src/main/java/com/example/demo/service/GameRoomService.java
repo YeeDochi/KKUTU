@@ -97,6 +97,11 @@ public class GameRoomService {
             System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Invalid pattern");
             return failResult; // [!!!] HashMap 반환
         }
+        // "꾼", "륨"으로 끝나는 단어 방지
+        if (word.endsWith("꾼") || word.endsWith("륨")) {
+            System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Ends with a forbidden character.");
+            return failResult;
+        }
         if (room.getLastWord() != null) {
             String lastCharStr = room.getLastWord().substring(room.getLastWord().length() - 1);
             String alternativeStartStr = getAlternativeStartChar(lastCharStr);
@@ -195,7 +200,10 @@ public class GameRoomService {
                 return;
             }
             // [!!!] 다음 턴 알림 메시지 (별도 전송)
-            messagingTemplate.convertAndSend(topic, "다음 턴: " + nextPlayer.getNickname());
+            Map<String, String> turnSignal = new HashMap<>();
+            turnSignal.put("type", "TURN_CHANGE");
+            turnSignal.put("nextPlayer", nextPlayer.getNickname());
+            messagingTemplate.convertAndSend(topic, turnSignal);
 
             eventPublisher.publishEvent(new TurnSuccessEvent(this, roomId, nextPlayer.getUid(), word));
             // --- [!!!] 메시지 포맷 변경 끝 ---

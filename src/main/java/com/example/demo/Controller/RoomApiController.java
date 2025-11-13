@@ -20,23 +20,19 @@ public class RoomApiController {
 
     @PostMapping
     public Map<String, String> createRoom(@RequestBody CreateRoomRequest request) {
-        // GameRoomService에 방 생성을 위임
         GameRoom newRoom = gameRoomService.createRoom(
                 request.getRoomName(),
                 request.getMaxPlayers(),
                 request.getBotCount()
         );
 
-        // 클라이언트에게는 방 ID만 돌려주면 됨
         return Map.of("roomId", newRoom.getRoomId());
     }
 
     @GetMapping
     public List<RoomInfoDTO> getActiveRooms() {
-        // GameRoomService에서 활성 방 목록 가져오기 (GameRoom 객체 맵)
-        Map<String, GameRoom> activeRooms = gameRoomService.getActiveGameRooms(); // getActiveGameRooms 메소드 필요 (아래 참고)
+        Map<String, GameRoom> activeRooms = gameRoomService.getActiveGameRooms();
 
-        // GameRoom 객체들을 RoomInfoDTO 객체 리스트로 변환하여 반환
         return activeRooms.values().stream()
                 .map(room -> new RoomInfoDTO(
                         room.getRoomId(),

@@ -52,7 +52,6 @@ public class KoreanApiService {
                         response.get("channel").has("total") &&
                         response.get("channel").get("total").asInt() > 0) {
 
-                    // [!!!] 단어 뜻 추출 로직 추가 ---
                     String finalDefinition = "뜻 정보 없음"; // 기본값
 
                     try {
@@ -60,7 +59,7 @@ public class KoreanApiService {
                         if (itemNode.isArray() && itemNode.size() > 0) {
                             JsonNode senseNode = itemNode.get(0).path("sense");
 
-                            // [!!!] sense가 배열인지 객체인지 확인
+                            // sense가 배열인지 객체인지 확인
                             if (senseNode.isArray() && senseNode.size() > 0) {
                                 // 배열이면 첫 번째 요소 사용
                                 finalDefinition = senseNode.get(0).path("definition").asText("뜻 정보 없음");
@@ -73,11 +72,10 @@ public class KoreanApiService {
                         System.err.println("!!! API Definition Parse Error for [" + word + "]: " + e.getMessage());
                         // finalDefinition은 기본값 "뜻 정보 없음" 유지
                     }
-                    // --- [!!!] 추출 로직 끝 ---
 
                     System.out.println("--- API SUCCESS for word: [" + word + "], Definition: [" + finalDefinition + "]");
                     result.put("isValid", true);
-                    result.put("definition", finalDefinition); // [!!!] 추출된 뜻 저장
+                    result.put("definition", finalDefinition); //  추출된 뜻 저장
 
                 } else {
                     System.err.println("!!! API FAIL (Total <= 0 or Invalid JSON) for word: [" + word + "]");
@@ -90,6 +88,6 @@ public class KoreanApiService {
         }
 
         System.out.println("--- KoreanApiService.validateWord returning: " + result + " for word: [" + word + "]");
-        return result; // [!!!] Map 반환
+        return result; //  Map 반환
     }
 }

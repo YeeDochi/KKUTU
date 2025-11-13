@@ -12,7 +12,6 @@ public class RoomInfoDTO {
     private int maxPlayers;
     private int botCount;
 
-    // GameRoom 객체로부터 DTO를 생성하는 생성자 (편의용)
     public RoomInfoDTO(String roomId, String roomName, int currentPlayerCount, int maxPlayers, int botCount) {
         this.roomId = roomId;
         this.roomName = roomName;

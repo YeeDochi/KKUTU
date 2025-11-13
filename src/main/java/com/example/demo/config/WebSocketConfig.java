@@ -25,11 +25,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // 3. 클라이언트가 WebSocket에 처음 연결할 때 사용할 엔드포인트
-        registry.addEndpoint("/ws") // 예: http://localhost:8080/ws
-                .withSockJS(); // SockJS는 WebSocket을 지원하지 않는 브라우저에서도 작동하도록 도와줌
+        registry.addEndpoint("/ws") // ex: http://localhost:8080/ws
+                .withSockJS();
     }
 
-    // --- [!!!] `TaskScheduler` Bean 추가 (GameRoomController에서 사용) ---
     @Bean
     public TaskScheduler taskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();

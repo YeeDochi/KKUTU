@@ -29,7 +29,7 @@ public class GameRoomController {
     private final WebSocketEventListener webSocketEventListener;
     private final SimpMessagingTemplate messagingTemplate;
 
-    // --- [!!!] TaskScheduler 주입 삭제 ---
+    // --- TaskScheduler 주입 삭제 (일단 지금은 안씀)---
     // private final TaskScheduler taskScheduler;
 
     @MessageMapping("/game/{roomId}/word")
@@ -41,30 +41,27 @@ public class GameRoomController {
         );
     }
 
-    // --- [!!!] `joinRoom` 메소드 (클라이언트 UID 사용) ---
+    // ---`joinRoom` 메소드 (클라이언트 UID 사용) ---
     @MessageMapping("/game/{roomId}/join")
     public void joinRoom(@DestinationVariable String roomId, @Payload JoinMessage message, @Header("simpSessionId") String sessionId) {
 
-        // [!!!] 클라이언트가 보낸 UID와 닉네임을 사용
+        // 클라이언트가 보낸 UID와 닉네임을 사용
         String uid = message.getUid();
         String nickname = message.getNickname();
 
         String joinResult = gameRoomService.addPlayerToRoom(roomId, uid, nickname);
 
         if (joinResult.equals("SUCCESS")) {
-            // [!!!] 성공: 세션 등록
+            // 성공: 세션 등록
             webSocketEventListener.registerSession(sessionId, uid, roomId);
             System.out.println("--- [JOIN SUCCESS] Player " + nickname + " (UID: " + uid + ") joined room " + roomId);
 
-            // [!!!] 환영 메시지(welcome) 전송 로직 *완전히 삭제*
-            // (클라이언트는 이미 자신의 UID를 알고 있음)
-
         } else {
-            // [!!!] 실패: 에러 메시지 전송 (변경 없음)
+            // 실패: 에러 메시지 전송
             String errorMessage = "알 수 없는 오류";
             switch (joinResult) {
-                case "NICKNAME_DUPLICATE": errorMessage = "이미 사용 중인 닉네임입니다."; break; // (이젠 사용 안 함)
-                case "UID_DUPLICATE": errorMessage = "이미 접속 중인 유저입니다. (다른 탭)"; break; // (닉네임 중복 시 발생)
+                case "NICKNAME_DUPLICATE": errorMessage = "이미 사용 중인 닉네임입니다."; break;
+                case "UID_DUPLICATE": errorMessage = "이미 접속 중인 유저입니다. (다른 탭)"; break;
                 case "ROOM_FULL": errorMessage = "방이 꽉 찼습니다."; break;
                 case "ROOM_NOT_FOUND": errorMessage = "존재하지 않는 방입니다."; break;
             }
@@ -78,7 +75,7 @@ public class GameRoomController {
         }
     }
 
-    // --- `createHeaders` 헬퍼 (변경 없음) ---
+    // --- `createHeaders` 헬퍼 ---
     private MessageHeaders createHeaders(String sessionId) {
         SimpMessageHeaderAccessor headerAccessor = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
         headerAccessor.setSessionId(sessionId);
@@ -91,12 +88,11 @@ public class GameRoomController {
         gameRoomService.passTurn(roomId, message.getUid());
     }
 
-    // --- [!!!] DTO 클래스 (JoinMessage 수정) ---
+    // --- DTO 클래스 (JoinMessage 수정) ---
     @Getter @Setter private static class ForfeitMessage { private String uid; }
 
     @Getter @Setter
     private static class JoinMessage {
-        // [!!!] uid, nickname 둘 다 받음
         private String uid;
         private String nickname;
     }

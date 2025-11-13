@@ -1,13 +1,14 @@
-// game.js (클라이언트 UID 생성 방식으로 복구)
+// game.js (JSON 신호 처리 기능이 포함된 최신 버전)
 
 // --- 전역 변수 ---
 let stompClient = null;
 let currentRoomId = null;
-let myUid = null;         // [!!!] localStorage에서 가져올 UID
-let myNickname = null;  // [!!!] 접속 시 사용한 닉네임
+let myUid = null;         // localStorage에서 가져올 UID
+let myNickname = null;  // 접속 시 사용한 닉네임
 let myTurn = false;
 
 // --- DOM 요소 ---
+// 이 스크립트는 game.html의 DOM을 조작합니다.
 const lobbyDiv = document.getElementById('lobby');
 const gameRoomDiv = document.getElementById('gameRoom');
 const nicknameInput = document.getElementById('nickname');
@@ -28,11 +29,11 @@ const timerDisplay = document.getElementById('timerDisplay');
 const refreshRoomListBtn = document.getElementById('refreshRoomListBtn');
 const roomListOutput = document.getElementById('roomListOutput');
 
-// --- [!!!] UID 헬퍼 함수 추가 (localStorage) ---
+// --- UID 헬퍼 함수 (localStorage) ---
 function getOrCreateUid() {
     let uid = localStorage.getItem('kkutu_uid');
     if (!uid) {
-        // 간단한 UUID 생성기 (Crypto API가 더 좋지만, 간단하게 구현)
+        // 간단한 UUID 생성기
         uid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
             var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
@@ -59,18 +60,16 @@ if (wordInput) {
 if (forfeitBtn) forfeitBtn.addEventListener('click', forfeitTurn);
 if (refreshRoomListBtn) refreshRoomListBtn.addEventListener('click', fetchAndDisplayRoomList);
 
-// [!!!] 페이지 로드 시 UID를 미리 가져오고 방 목록을 표시
+// 페이지 로드 시 UID 가져오기 및 방 목록 표시
 window.addEventListener('load', () => {
     myUid = getOrCreateUid();
     fetchAndDisplayRoomList();
 });
 
 
-// --- 방 생성/참가 함수 (UID, Nickname 사용) ---
+// --- 방 생성/참가 함수 ---
 async function createRoomAndJoin() {
     myNickname = nicknameInput.value.trim();
-    // [!!!] myUid는 페이지 로드 시 이미 설정됨
-
     const roomName = roomNameInput.value.trim();
     const maxPlayers = parseInt(maxPlayersInput.value, 10);
     const botCount = parseInt(botCountInput.value, 10);
@@ -97,7 +96,6 @@ async function createRoomAndJoin() {
         currentRoomId = room.roomId;
         addToLog(`방 생성 성공 (ID: ${currentRoomId}). 게임방에 연결합니다...`, roomListOutput);
 
-        // [!!!] UID와 Nickname 전달
         connectAndJoin(myUid, myNickname);
     } catch (error) {
         addToLog(`오류: ${error.message}`, roomListOutput);
@@ -114,19 +112,18 @@ function joinExistingRoom(roomIdFromList = null) {
     }
     addToLog(`방 (${currentRoomId}) 참가 시도...`, roomListOutput);
 
-    // [!!!] UID와 Nickname 전달
     connectAndJoin(myUid, myNickname);
 }
 
-// --- [!!!] WebSocket 함수 (welcome 구독 삭제, setTimeout 삭제) ---
+// --- WebSocket 함수 ---
 function connectAndJoin(uid, nickname) {
     if (stompClient && stompClient.connected) {
         lobbyDiv.style.display = 'none'; gameRoomDiv.style.display = 'block';
-        roomTitle.innerText = `게임방 (ID: ${currentRoomId})`;
+        roomTitle.innerText = `// 2. Game Room (ID: ${currentRoomId})`;
         return;
     }
     lobbyDiv.style.display = 'none'; gameRoomDiv.style.display = 'block';
-    roomTitle.innerText = `게임방 (ID: ${currentRoomId})`;
+    roomTitle.innerText = `// 2. Game Room (ID: ${currentRoomId})`;
     clearLogs();
 
     const socket = new SockJS('/ws');
@@ -137,32 +134,46 @@ function connectAndJoin(uid, nickname) {
         (frame) => {
             addToLog('서버 연결 성공!', chatOutput);
 
-            // 1. 공용 채팅 구독 (변경 없음)
+            // [!!!] 1. 공용 채팅 구독 (수정됨)
             stompClient.subscribe(`/topic/game-room/${currentRoomId}`, (message) => {
                 const messageBody = message.body;
-                addToLog(messageBody, chatOutput);
-                parseAndHandleTurnChange(messageBody);
+
+                let isTurnSignal = false;
+                try {
+                    // [!!!] 2. JSON 파싱 시도
+                    const data = JSON.parse(messageBody);
+
+                    // [!!!] 3. JSON이고, 타입이 'TURN_CHANGE'인지 확인
+                    if (data && data.type === 'TURN_CHANGE') {
+                        isTurnSignal = true;
+                        // [!!!] 4. 턴 변경 함수를 *직접* 호출 (채팅창에 안 씀)
+                        handleTurnChange(data.nextPlayer);
+                    }
+                } catch (e) {
+                    // JSON 파싱 실패 시, 일반 텍스트 메시지로 간주
+                }
+
+                // [!!!] 5. 턴 신호가 *아닌* 일반 메시지만 채팅창에 추가
+                if (!isTurnSignal) {
+                    addToLog(messageBody, chatOutput);
+                    // [!!!] 6. 텍스트 메시지에서 '첫 턴'/'재시작' 텍스트 파싱
+                    parseAndHandleTurnChange(messageBody);
+                }
             });
 
             // 2. 입장 실패 에러 구독 (변경 없음)
             stompClient.subscribe('/user/queue/errors', (message) => {
                 const errorBody = message.body;
                 addToLog(errorBody, errorOutput);
-                // [!!!] UID 중복 시에도 disconnect 처리
                 if (errorBody.includes("닉네임") || errorBody.includes("꽉 찼습니다") || errorBody.includes("존재하지 않는 방") || errorBody.includes("접속 중인 유저")) {
                     addToLog("방 참가에 실패하여 로비로 돌아갑니다.", errorOutput);
                     disconnect();
                 }
             });
 
-            // 3. [!!!] '/user/queue/welcome' 구독 *삭제*
-            // stompClient.subscribe('/user/queue/welcome', ...); // (삭제됨)
-
-            // 4. [!!!] setTimeout *삭제*
-            // [!!!] *즉시* 참가 메시지 전송 (uid, nickname 포함)
             addToLog('방 참가 메시지 전송 중...', chatOutput);
             stompClient.send(`/app/game/${currentRoomId}/join`, {},
-                JSON.stringify({ uid: uid, nickname: nickname }) // [!!!] uid 포함
+                JSON.stringify({ uid: uid, nickname: nickname }) // uid 포함
             );
 
             handleTurnChange(null);
@@ -186,25 +197,21 @@ function disconnect() {
     currentRoomId = null;
     myTurn = false;
 
-    // [!!!] myUid와 myNickname은 초기화하지 않음 (localStorage 기준)
-
     if(wordInput) wordInput.disabled = true;
     if(forfeitBtn) forfeitBtn.disabled = true;
-    if(timerDisplay) timerDisplay.innerText = "";
+    if(timerDisplay) timerDisplay.innerText = "[Timer]";
     console.log("UI switched to lobby.");
     fetchAndDisplayRoomList();
 }
 
 function sendWord() {
     const word = wordInput.value.trim();
-    // [!!!] myUid는 이제 localStorage에서 왔으므로 null일 리 없음
     if (word && stompClient && stompClient.connected && currentRoomId && myUid) {
         stompClient.send(`/app/game/${currentRoomId}/word`, {},
             JSON.stringify({ word: word, uid: myUid })
         );
         wordInput.value = '';
     } else {
-        // [!!!] myUid 체크 로직 제거 (단순화)
         if (!word) addToLog("단어를 입력하세요.", errorOutput);
         else if (!stompClient || !stompClient.connected) addToLog("서버에 연결되지 않았습니다.", errorOutput);
     }
@@ -222,7 +229,7 @@ function forfeitTurn() {
     }
 }
 
-// --- 방 목록 함수 (변경 없음) ---
+// --- 방 목록 함수 ---
 async function fetchAndDisplayRoomList() {
     if (!roomListOutput) {
         console.error("Room list output element not found!");
@@ -238,7 +245,7 @@ async function fetchAndDisplayRoomList() {
         const rooms = await response.json();
         displayRoomList(rooms);
     } catch (error) {
-        roomListOutput.innerHTML = `<p style="color:red;">오류: ${error.message}</p>`;
+        roomListOutput.innerHTML = `<p style="color:#f44747;">오류: ${error.message}</p>`;
         console.error("Fetch room list error:", error);
     }
 }
@@ -256,21 +263,17 @@ function displayRoomList(rooms) {
 
     rooms.forEach(room => {
         const li = document.createElement('li');
-        // (스타일 생략)
-        li.style.marginBottom = '10px'; li.style.padding = '10px'; li.style.border = '1px solid #444';
-        li.style.borderRadius = '4px'; li.style.display = 'flex'; li.style.justifyContent = 'space-between';
-        li.style.alignItems = 'center';
 
         const roomInfo = document.createElement('span');
         const roomName = room.roomName || '이름 없는 방';
         const currentPlayers = typeof room.currentPlayerCount === 'number' ? room.currentPlayerCount : '?';
         const maxPlayers = typeof room.maxPlayers === 'number' ? room.maxPlayers : '?';
         const botCount = typeof room.botCount === 'number' ? room.botCount : '?';
-        roomInfo.textContent = `${roomName} (${currentPlayers}/${maxPlayers}) - 봇: ${botCount}명`;
+        // 스타일 테마에 맞게 텍스트 포맷 변경
+        roomInfo.textContent = `"${roomName}" [${currentPlayers}/${maxPlayers}] (Bots: ${botCount})`;
 
         const joinBtn = document.createElement('button');
-        joinBtn.textContent = '참가';
-        joinBtn.style.padding = '5px 10px';
+        joinBtn.textContent = 'join()';
         joinBtn.addEventListener('click', () => joinExistingRoom(room.roomId));
 
         li.appendChild(roomInfo);
@@ -280,11 +283,17 @@ function displayRoomList(rooms) {
     roomListOutput.appendChild(ul);
 }
 
-// --- 유틸리티 함수 (변경 없음) ---
+// --- 유틸리티 함수 ---
 function addToLog(message, outputElement = chatOutput) {
     if (!outputElement) { console.warn("addToLog: outputElement is null"); return; }
     const p = document.createElement('p');
-    p.textContent = message;
+    // 터미널 스타일 프롬프트 추가
+    if (outputElement.id === 'chatOutput') {
+        p.textContent = `[Log] > ${message}`;
+    } else {
+        p.textContent = `[Error] > ${message}`;
+    }
+
     if (outputElement.firstChild) {
         outputElement.insertBefore(p, outputElement.firstChild);
     } else {
@@ -301,10 +310,9 @@ function clearLogs() {
 function parseAndHandleTurnChange(messageBody) {
     let nextPlayerNickname = null;
 
-    // [!!!] '님'이 붙어있을 경우를 대비해 .replace('님', '') 추가
-    const turnMatch = messageBody.match(/다음 턴: (\S+)/);
-    if (turnMatch && turnMatch[1]) { nextPlayerNickname = turnMatch[1].replace('님', ''); }
+    // [!!!] "다음 턴:" 매치 로직 (제거됨) - JSON으로 처리
 
+    // [!!!] '첫 턴'과 '탈락 후 재시작' 텍스트만 파싱
     const startMatch = messageBody.match(/첫 턴은 (\S+)님입니다./);
     if (startMatch && startMatch[1]) { nextPlayerNickname = startMatch[1].replace('님', ''); }
 
@@ -325,16 +333,17 @@ function handleTurnChange(nextPlayerNickname) {
         myTurn = true;
         wordInput.disabled = false;
         forfeitBtn.disabled = false;
-        timerDisplay.innerText = "내 턴!";
+        timerDisplay.innerText = `[My Turn: ${myNickname}]`; // "내 턴!"
         wordInput.focus();
     } else {
         myTurn = false;
         wordInput.disabled = true;
         forfeitBtn.disabled = true;
         if (nextPlayerNickname) {
-            timerDisplay.innerText = `${nextPlayerNickname}님의 턴`;
+            timerDisplay.innerText = `[Wait: ${nextPlayerNickname}'s Turn]`; // "다른 사람 턴"
         } else {
-            timerDisplay.innerText = "";
+            timerDisplay.innerText = "[Timer]"; // 기본값
         }
     }
 }
+

@@ -19,9 +19,9 @@ public class WebSocketEventListener {
 
     private final GameRoomService gameRoomService;
 
-    // [!!!] (세션ID -> 유저UID)
+    // (세션ID -> 유저UID)
     private final Map<String, String> sessionUserMap = new ConcurrentHashMap<>();
-    // [!!!] (세션ID -> 방ID)
+    // (세션ID -> 방ID)
     private final Map<String, String> sessionRoomMap = new ConcurrentHashMap<>();
 
     // (연결 리스너는 주석 처리됨 - 현 로직에선 불필요)
@@ -31,13 +31,12 @@ public class WebSocketEventListener {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
         String sessionId = headerAccessor.getSessionId();
 
-        // [!!!] userId가 아닌 uid를 가져옴
         String uid = sessionUserMap.remove(sessionId);
         String roomId = sessionRoomMap.remove(sessionId);
 
         if (uid != null && roomId != null) {
             log.info("WebSocket Disconnected: User UID '{}' from Room '{}'", uid, roomId);
-            // [!!!] uid로 연결 해제 처리 위임
+            //  uid로 연결 해제 처리 위임
             gameRoomService.handlePlayerDisconnect(roomId, uid);
         } else if (uid != null) {
             log.info("WebSocket Disconnected: User UID '{}' (before joining room)", uid);
@@ -46,7 +45,7 @@ public class WebSocketEventListener {
         }
     }
 
-    // --- [!!!] `registerSession` (uid) ---
+    // --- `registerSession` (uid) ---
     /**
      * 플레이어가 방에 성공적으로 Join했을 때 호출되어 세션 정보를 저장합니다.
      */

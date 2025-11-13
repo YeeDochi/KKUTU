@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
 @Setter
 public class GameRoom {
 
-    // --- PlayerInfo 내부 클래스 (변경 없음) ---
+
     @Getter
     @Setter
     public static class PlayerInfo {
@@ -35,7 +35,6 @@ public class GameRoom {
             return Objects.hash(uid);
         }
     }
-    // --- ---
 
     private String roomId;
     private String roomName;
@@ -63,14 +62,10 @@ public class GameRoom {
         this.currentTurnIndex = 0;
     }
 
-    // --- [!!!] `addPlayer` 메소드 수정 (중복 검사 제거) ---
     public boolean addPlayer(String uid, String nickname) {
-        // [!!!] 서비스 레이어에서 이미 검사했으므로, 여기서는 방 꽉참 여부만 확인
         if (players.size() >= maxPlayers) {
             return false;
         }
-
-        // [!!!] 닉네임 중복 및 UID 중복 검사 로직 삭제!
 
         PlayerInfo newPlayer = new PlayerInfo(uid, nickname);
         players.add(newPlayer);
@@ -83,7 +78,6 @@ public class GameRoom {
         return true;
     }
 
-    // --- (이하 나머지 메소드들은 변경 없음) ---
 
     public void removePlayer(String uid) {
         PlayerInfo playerToRemove = getPlayerByUid(uid);
