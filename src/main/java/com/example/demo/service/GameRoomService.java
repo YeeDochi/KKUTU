@@ -312,8 +312,10 @@ public class GameRoomService {
 
         } else if (remainingPlayers.size() == 1) {
             System.out.println("--- [GAME END] Only one player left in room: " + roomId);
-            String winnerNickname = remainingPlayers.get(0).getNickname(); // 닉네임
-            messagingTemplate.convertAndSend(topic, "게임 종료! 최종 생존자: " + winnerNickname);
+            String winnerNickname = remainingPlayers.get(0).getNickname();
+            String jsonMessage = String.format("{\"type\":\"GAME_OVER\", \"winner\":\"%s\"}", winnerNickname);
+
+            messagingTemplate.convertAndSend(topic, jsonMessage);
 
         } else {
             room.setLastWord(null);

@@ -1,4 +1,4 @@
-// [KKUTU] game.js - 캐치마인드와 동일한 Clean 버전
+// [KKUTU] game.js - 폭죽 효과 추가 버전
 
 // --- 테마 로직 ---
 function toggleTheme() {
@@ -44,7 +44,6 @@ function getOrCreateUid() {
 }
 
 // --- 초기화 ---
-// 페이지 로드 시 UID 생성 및 방 목록 로드
 window.addEventListener('load', () => {
     myUid = getOrCreateUid();
     if (!lobbyDiv.classList.contains('hidden')) {
@@ -52,9 +51,8 @@ window.addEventListener('load', () => {
     }
 });
 
-// --- UI 함수 (HTML onclick에서 자동 연결됨) ---
+// --- UI 함수 ---
 
-// 1. 로그인 -> 로비 이동
 function goToLobby() {
     const input = document.getElementById('nicknameInput').value.trim();
     if (!input) return alert("닉네임을 입력해주세요!");
@@ -67,7 +65,6 @@ function goToLobby() {
     loadRooms();
 }
 
-// 2. 방 목록 불러오기 (캐치마인드와 동일 로직)
 async function loadRooms() {
     const list = document.getElementById('room-list');
     list.innerHTML = '<li style="padding:20px; text-align:center; color:var(--text-secondary);">불러오는 중...</li>';
@@ -96,7 +93,6 @@ async function loadRooms() {
     }
 }
 
-// 3. 방 생성
 async function createRoom() {
     const roomName = document.getElementById('roomName').value.trim();
     const maxPlayers = parseInt(document.getElementById('maxPlayers').value, 10);
@@ -119,7 +115,6 @@ async function createRoom() {
     }
 }
 
-// 4. 방 참가
 function joinExistingRoom(roomId) {
     if (!myNickname) return alert("닉네임이 없습니다. 다시 로그인해주세요.");
     currentRoomId = roomId;
@@ -144,17 +139,34 @@ function connectAndJoin(uid, nickname) {
 
         stompClient.subscribe(`/topic/game-room/${currentRoomId}`, (message) => {
             const body = message.body;
+            let data = null;
             try {
                 if (body.startsWith('{')) {
-                    const data = JSON.parse(body);
-                    if (data.type === 'TURN_CHANGE') {
-                        handleTurnChange(data.nextPlayer);
-                        return;
-                    }
+                    data = JSON.parse(body);
                 }
             } catch (e) {}
 
+            // [1] JSON 메시지 처리
+            if (data) {
+                if (data.type === 'TURN_CHANGE') {
+                    handleTurnChange(data.nextPlayer);
+                    return;
+                }
+                // [추가] 게임 종료 메시지 감지 (JSON 형식인 경우)
+                if (data.type === 'GAME_OVER') {
+                    addToLog(`🏆 게임 종료! 승자: ${data.winner || '알 수 없음'}`, chatOutput);
+                    fireConfetti(); // 🎉 폭죽 발사!
+                    return;
+                }
+            }
+
+            // [2] 일반 텍스트 메시지 처리
             addToLog(body, chatOutput);
+
+            // [추가] 텍스트 메시지에서 승리 감지 (백엔드가 텍스트로 보낼 경우 대비)
+            if (body.includes("승리") || body.includes("우승") || body.includes("최후의 1인")) {
+                fireConfetti(); // 🎉 폭죽 발사!
+            }
 
             if (body.includes("님이 입력했습니다:")) return;
             const startMatch = body.match(/첫 턴은 (\S+)님입니다./);
@@ -197,7 +209,6 @@ function exitRoom() {
     loadRooms();
 }
 
-// --- 유틸리티 ---
 function handleTurnChange(nextPlayer) {
     if (nextPlayer === myNickname) {
         myTurn = true;
@@ -226,3 +237,41 @@ function clearLogs() {
     chatOutput.innerHTML = '';
     errorOutput.innerHTML = '';
 }
+
+// --- [추가] 폭죽 효과 함수 (캐치마인드와 동일) ---
+function fireConfetti() {
+    var duration = 3 * 1000;
+    var animationEnd = Date.now() + duration;
+    var defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 };
+
+    function randomInRange(min, max) {
+        return Math.random() * (max - min) + min;
+    }
+
+    var interval = setInterval(function() {
+        var timeLeft = animationEnd - Date.now();
+
+        if (timeLeft <= 0) {
+            return clearInterval(interval);
+        }
+
+        var particleCount = 50 * (timeLeft / duration);
+        // 양쪽에서 팡팡!
+        confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+        confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+    }, 250);
+}
+
+// --- Window 등록 ---
+window.toggleTheme = toggleTheme;
+window.goToLobby = goToLobby;
+window.loadRooms = loadRooms;
+window.createRoom = createRoom;
+window.joinExistingRoom = joinExistingRoom;
+window.sendWord = sendWord;
+window.exitRoom = exitRoom;
+window.forfeitTurn = function() { // 기권 함수 연결
+    if (stompClient && currentRoomId) {
+        stompClient.send(`/app/game/${currentRoomId}/forfeit`, {}, JSON.stringify({ uid: myUid }));
+    }
+};
