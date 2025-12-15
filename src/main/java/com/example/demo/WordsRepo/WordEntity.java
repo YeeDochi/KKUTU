@@ -9,7 +9,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-@Table(name = "kr")
+@Table(name = "kkutu_words")
 public class WordEntity {
 
     @Id

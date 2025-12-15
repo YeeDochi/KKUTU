@@ -11,7 +11,7 @@ public interface WordRepository extends JpaRepository<WordEntity, Long> {
 
 
     boolean existsByName(String name);
-    @Query(value = "SELECT * FROM dictionary WHERE name LIKE :prefix% ORDER BY RAND() LIMIT 1",
+    @Query(value = "SELECT * FROM kkutu_words WHERE name LIKE :prefix% ORDER BY RAND() LIMIT 1",
             nativeQuery = true)
     Optional<WordEntity> findRandomWordStartingWith(@Param("prefix") String prefix);
     List<WordEntity> findTop5ByNameStartingWith(String prefix);

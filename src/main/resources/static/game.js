@@ -1,349 +1,228 @@
-// game.js (JSON 신호 처리 기능이 포함된 최신 버전)
+// [KKUTU] game.js - 캐치마인드와 동일한 Clean 버전
+
+// --- 테마 로직 ---
+function toggleTheme() {
+    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
+    document.getElementById('themeBtn').innerText = isDark ? 'Light' : 'Dark';
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+if (localStorage.getItem('theme') === 'dark') {
+    document.body.classList.add('dark-mode');
+    document.getElementById('themeBtn').innerText = 'Light';
+}
 
 // --- 전역 변수 ---
 let stompClient = null;
 let currentRoomId = null;
-let myUid = null;         // localStorage에서 가져올 UID
-let myNickname = null;  // 접속 시 사용한 닉네임
+let myUid = null;
+let myNickname = null;
 let myTurn = false;
 
 // --- DOM 요소 ---
-// 이 스크립트는 game.html의 DOM을 조작합니다.
 const lobbyDiv = document.getElementById('lobby');
 const gameRoomDiv = document.getElementById('gameRoom');
-const nicknameInput = document.getElementById('nickname');
-const createRoomBtn = document.getElementById('createRoomBtn');
-const joinRoomBtn = document.getElementById('joinRoomBtn');
-const leaveRoomBtn = document.getElementById('leaveRoomBtn');
-const sendWordBtn = document.getElementById('sendWordBtn');
+const nicknameInput = document.getElementById('nicknameInput');
 const wordInput = document.getElementById('wordInput');
 const chatOutput = document.getElementById('chatOutput');
 const errorOutput = document.getElementById('errorOutput');
 const roomTitle = document.getElementById('roomTitle');
-const joinRoomIdInput = document.getElementById('joinRoomId');
-const roomNameInput = document.getElementById('roomName');
-const maxPlayersInput = document.getElementById('maxPlayers');
-const botCountInput = document.getElementById('botCount');
-const forfeitBtn = document.getElementById('forfeitBtn');
 const timerDisplay = document.getElementById('timerDisplay');
-const refreshRoomListBtn = document.getElementById('refreshRoomListBtn');
-const roomListOutput = document.getElementById('roomListOutput');
+const forfeitBtn = document.getElementById('forfeitBtn');
 
-// --- UID 헬퍼 함수 (localStorage) ---
+// --- UID 생성/조회 ---
 function getOrCreateUid() {
     let uid = localStorage.getItem('kkutu_uid');
     if (!uid) {
-        // 간단한 UUID 생성기
         uid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
             var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
         });
         localStorage.setItem('kkutu_uid', uid);
     }
-    console.log("My UID is: " + uid);
     return uid;
 }
 
-// --- 이벤트 리스너 ---
-if (createRoomBtn) createRoomBtn.addEventListener('click', createRoomAndJoin);
-if (joinRoomBtn) joinRoomBtn.addEventListener('click', () => joinExistingRoom());
-if (leaveRoomBtn) leaveRoomBtn.addEventListener('click', disconnect);
-if (sendWordBtn) sendWordBtn.addEventListener('click', sendWord);
-if (wordInput) {
-    wordInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            sendWord();
-        }
-    });
-}
-if (forfeitBtn) forfeitBtn.addEventListener('click', forfeitTurn);
-if (refreshRoomListBtn) refreshRoomListBtn.addEventListener('click', fetchAndDisplayRoomList);
-
-// 페이지 로드 시 UID 가져오기 및 방 목록 표시
+// --- 초기화 ---
+// 페이지 로드 시 UID 생성 및 방 목록 로드
 window.addEventListener('load', () => {
     myUid = getOrCreateUid();
-    fetchAndDisplayRoomList();
+    if (!lobbyDiv.classList.contains('hidden')) {
+        loadRooms();
+    }
 });
 
+// --- UI 함수 (HTML onclick에서 자동 연결됨) ---
 
-// --- 방 생성/참가 함수 ---
-async function createRoomAndJoin() {
-    myNickname = nicknameInput.value.trim();
-    const roomName = roomNameInput.value.trim();
-    const maxPlayers = parseInt(maxPlayersInput.value, 10);
-    const botCount = parseInt(botCountInput.value, 10);
+// 1. 로그인 -> 로비 이동
+function goToLobby() {
+    const input = document.getElementById('nicknameInput').value.trim();
+    if (!input) return alert("닉네임을 입력해주세요!");
 
-    if (!myNickname || !roomName) {
-        alert("닉네임과 방 제목을 입력하세요."); return;
-    }
-    if (isNaN(maxPlayers) || isNaN(botCount) || (botCount >= maxPlayers && maxPlayers > 0)) {
-        alert("최대 인원과 봇 수를 올바르게 입력하세요 (봇 수는 최대 인원보다 적어야 함)."); return;
-    }
+    myNickname = input;
+    document.getElementById('welcome-msg').innerText = `${myNickname}님 환영합니다!`;
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('lobby').classList.remove('hidden');
+
+    loadRooms();
+}
+
+// 2. 방 목록 불러오기 (캐치마인드와 동일 로직)
+async function loadRooms() {
+    const list = document.getElementById('room-list');
+    list.innerHTML = '<li style="padding:20px; text-align:center; color:var(--text-secondary);">불러오는 중...</li>';
 
     try {
-        addToLog('방 생성 중...', roomListOutput);
-        const response = await fetch('/api/rooms', {
+        const response = await fetch('/KKUTU/api/rooms');
+        const rooms = await response.json();
+
+        if (!rooms.length) {
+            list.innerHTML = '<li style="padding:20px; text-align:center; color:var(--text-secondary);">개설된 방이 없습니다.</li>';
+        } else {
+            list.innerHTML = '';
+            rooms.forEach(room => {
+                const li = document.createElement('li');
+                li.className = 'room-item';
+                li.innerHTML = `
+                    <span style="font-weight:600;">${room.roomName || '이름 없는 방'}</span>
+                    <button class="btn-default" onclick="joinExistingRoom('${room.roomId}')" style="font-size:12px;">참가</button>
+                `;
+                list.appendChild(li);
+            });
+        }
+    } catch (error) {
+        console.error(error);
+        list.innerHTML = '<li style="padding:20px; text-align:center; color:#cf222e;">목록 로드 실패</li>';
+    }
+}
+
+// 3. 방 생성
+async function createRoom() {
+    const roomName = document.getElementById('roomName').value.trim();
+    const maxPlayers = parseInt(document.getElementById('maxPlayers').value, 10);
+    const botCount = parseInt(document.getElementById('botCount').value, 10);
+
+    if (!roomName) return alert("방 제목을 입력하세요.");
+
+    try {
+        const response = await fetch('/KKUTU/api/rooms', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ roomName, maxPlayers, botCount })
         });
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`방 생성 실패 (${response.status}): ${errorText}`);
-        }
+        if (!response.ok) throw new Error("방 생성 실패");
         const room = await response.json();
         currentRoomId = room.roomId;
-        addToLog(`방 생성 성공 (ID: ${currentRoomId}). 게임방에 연결합니다...`, roomListOutput);
-
         connectAndJoin(myUid, myNickname);
     } catch (error) {
-        addToLog(`오류: ${error.message}`, roomListOutput);
-        console.error("Create room error:", error);
+        alert("방 생성 중 오류가 발생했습니다.");
     }
 }
 
-function joinExistingRoom(roomIdFromList = null) {
-    myNickname = nicknameInput.value.trim();
-    currentRoomId = roomIdFromList || joinRoomIdInput.value.trim();
-
-    if (!myNickname || !currentRoomId) {
-        alert("닉네임을 입력하고, 참가할 방 ID를 입력하거나 목록에서 선택하세요."); return;
-    }
-    addToLog(`방 (${currentRoomId}) 참가 시도...`, roomListOutput);
-
+// 4. 방 참가
+function joinExistingRoom(roomId) {
+    if (!myNickname) return alert("닉네임이 없습니다. 다시 로그인해주세요.");
+    currentRoomId = roomId;
     connectAndJoin(myUid, myNickname);
 }
 
-// --- WebSocket 함수 ---
+// --- WebSocket 연결 및 게임 로직 ---
 function connectAndJoin(uid, nickname) {
-    if (stompClient && stompClient.connected) {
-        lobbyDiv.style.display = 'none'; gameRoomDiv.style.display = 'block';
-        roomTitle.innerText = `// 2. Game Room (ID: ${currentRoomId})`;
-        return;
-    }
-    lobbyDiv.style.display = 'none'; gameRoomDiv.style.display = 'block';
-    roomTitle.innerText = `// 2. Game Room (ID: ${currentRoomId})`;
+    if (stompClient && stompClient.connected) return;
+
+    document.getElementById('lobby').classList.add('hidden');
+    document.getElementById('gameRoom').classList.remove('hidden');
+    document.getElementById('roomTitle').innerText = `Room: ${currentRoomId}`;
     clearLogs();
 
-    const socket = new SockJS('/ws');
+    const socket = new SockJS('/KKUTU/ws');
     stompClient = Stomp.over(socket);
-    stompClient.debug = console.log; // 디버그 로그 활성화
+    stompClient.debug = null;
 
-    stompClient.connect({},
-        (frame) => {
-            addToLog('서버 연결 성공!', chatOutput);
+    stompClient.connect({}, (frame) => {
+        addToLog('서버에 연결되었습니다.', chatOutput);
 
-            // [!!!] 1. 공용 채팅 구독 (수정됨)
-            stompClient.subscribe(`/topic/game-room/${currentRoomId}`, (message) => {
-                const messageBody = message.body;
-
-                let isTurnSignal = false;
-                try {
-                    // [!!!] 2. JSON 파싱 시도
-                    const data = JSON.parse(messageBody);
-
-                    // [!!!] 3. JSON이고, 타입이 'TURN_CHANGE'인지 확인
-                    if (data && data.type === 'TURN_CHANGE') {
-                        isTurnSignal = true;
-                        // [!!!] 4. 턴 변경 함수를 *직접* 호출 (채팅창에 안 씀)
+        stompClient.subscribe(`/topic/game-room/${currentRoomId}`, (message) => {
+            const body = message.body;
+            try {
+                if (body.startsWith('{')) {
+                    const data = JSON.parse(body);
+                    if (data.type === 'TURN_CHANGE') {
                         handleTurnChange(data.nextPlayer);
+                        return;
                     }
-                } catch (e) {
-                    // JSON 파싱 실패 시, 일반 텍스트 메시지로 간주
                 }
+            } catch (e) {}
 
-                // [!!!] 5. 턴 신호가 *아닌* 일반 메시지만 채팅창에 추가
-                if (!isTurnSignal) {
-                    addToLog(messageBody, chatOutput);
-                    // [!!!] 6. 텍스트 메시지에서 '첫 턴'/'재시작' 텍스트 파싱
-                    parseAndHandleTurnChange(messageBody);
-                }
-            });
+            addToLog(body, chatOutput);
 
-            // 2. 입장 실패 에러 구독 (변경 없음)
-            stompClient.subscribe('/user/queue/errors', (message) => {
-                const errorBody = message.body;
-                addToLog(errorBody, errorOutput);
-                if (errorBody.includes("닉네임") || errorBody.includes("꽉 찼습니다") || errorBody.includes("존재하지 않는 방") || errorBody.includes("접속 중인 유저")) {
-                    addToLog("방 참가에 실패하여 로비로 돌아갑니다.", errorOutput);
-                    disconnect();
-                }
-            });
+            if (body.includes("님이 입력했습니다:")) return;
+            const startMatch = body.match(/첫 턴은 (\S+)님입니다./);
+            if (startMatch) handleTurnChange(startMatch[1].replace('님', ''));
+            const nextMatch = body.match(/다음 턴: (\S+)/);
+            if (nextMatch) handleTurnChange(nextMatch[1]);
+        });
 
-            addToLog('방 참가 메시지 전송 중...', chatOutput);
-            stompClient.send(`/app/game/${currentRoomId}/join`, {},
-                JSON.stringify({ uid: uid, nickname: nickname }) // uid 포함
-            );
+        stompClient.subscribe('/user/queue/errors', (message) => {
+            addToLog(`[에러] ${message.body}`, errorOutput);
+            if (message.body.includes("실패") || message.body.includes("full")) {
+                alert(message.body);
+                exitRoom();
+            }
+        });
 
-            handleTurnChange(null);
-        },
-        (error) => {
-            addToLog(`서버 연결 실패: ${error}`, errorOutput);
-            console.error('STOMP connection error:', error);
-            disconnect();
-        }
-    );
-}
-
-function disconnect() {
-    if (stompClient !== null) {
-        if (stompClient.connected) {
-            stompClient.disconnect(() => { console.log("Disconnected callback."); });
-        }
-        stompClient = null;
-    }
-    lobbyDiv.style.display = 'block'; gameRoomDiv.style.display = 'none';
-    currentRoomId = null;
-    myTurn = false;
-
-    if(wordInput) wordInput.disabled = true;
-    if(forfeitBtn) forfeitBtn.disabled = true;
-    if(timerDisplay) timerDisplay.innerText = "[Timer]";
-    console.log("UI switched to lobby.");
-    fetchAndDisplayRoomList();
+        stompClient.send(`/app/game/${currentRoomId}/join`, {}, JSON.stringify({ uid: uid, nickname: nickname }));
+    }, (error) => {
+        console.error(error);
+        exitRoom();
+    });
 }
 
 function sendWord() {
     const word = wordInput.value.trim();
-    if (word && stompClient && stompClient.connected && currentRoomId && myUid) {
-        stompClient.send(`/app/game/${currentRoomId}/word`, {},
-            JSON.stringify({ word: word, uid: myUid })
-        );
+    if (word && stompClient && currentRoomId) {
+        stompClient.send(`/app/game/${currentRoomId}/word`, {}, JSON.stringify({ word: word, uid: myUid }));
         wordInput.value = '';
-    } else {
-        if (!word) addToLog("단어를 입력하세요.", errorOutput);
-        else if (!stompClient || !stompClient.connected) addToLog("서버에 연결되지 않았습니다.", errorOutput);
     }
 }
 
-function forfeitTurn() {
-    if (stompClient && stompClient.connected && currentRoomId && myUid) {
-        stompClient.send(`/app/game/${currentRoomId}/forfeit`, {},
-            JSON.stringify({ uid: myUid })
-        );
-        addToLog("턴 포기 메시지를 전송했습니다.", chatOutput);
-        handleTurnChange(null);
-    } else {
-        addToLog("포기하려면 서버에 연결되어 있어야 합니다.", errorOutput);
+function exitRoom() {
+    if (stompClient) {
+        stompClient.disconnect();
+        stompClient = null;
     }
+    document.getElementById('lobby').classList.remove('hidden');
+    document.getElementById('gameRoom').classList.add('hidden');
+    currentRoomId = null;
+    loadRooms();
 }
 
-// --- 방 목록 함수 ---
-async function fetchAndDisplayRoomList() {
-    if (!roomListOutput) {
-        console.error("Room list output element not found!");
-        return;
-    }
-    roomListOutput.innerHTML = '<p>방 목록 새로고침 중...</p>';
-    try {
-        const response = await fetch('/api/rooms');
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`방 목록 로드 실패 (${response.status}): ${errorText}`);
-        }
-        const rooms = await response.json();
-        displayRoomList(rooms);
-    } catch (error) {
-        roomListOutput.innerHTML = `<p style="color:#f44747;">오류: ${error.message}</p>`;
-        console.error("Fetch room list error:", error);
-    }
-}
-
-function displayRoomList(rooms) {
-    if (!roomListOutput) return;
-    roomListOutput.innerHTML = '';
-    if (!Array.isArray(rooms) || rooms.length === 0) {
-        roomListOutput.innerHTML = '<p>현재 생성된 방이 없습니다.</p>';
-        return;
-    }
-
-    const ul = document.createElement('ul');
-    ul.style.listStyle = 'none'; ul.style.padding = '0';
-
-    rooms.forEach(room => {
-        const li = document.createElement('li');
-
-        const roomInfo = document.createElement('span');
-        const roomName = room.roomName || '이름 없는 방';
-        const currentPlayers = typeof room.currentPlayerCount === 'number' ? room.currentPlayerCount : '?';
-        const maxPlayers = typeof room.maxPlayers === 'number' ? room.maxPlayers : '?';
-        const botCount = typeof room.botCount === 'number' ? room.botCount : '?';
-        // 스타일 테마에 맞게 텍스트 포맷 변경
-        roomInfo.textContent = `"${roomName}" [${currentPlayers}/${maxPlayers}] (Bots: ${botCount})`;
-
-        const joinBtn = document.createElement('button');
-        joinBtn.textContent = 'join()';
-        joinBtn.addEventListener('click', () => joinExistingRoom(room.roomId));
-
-        li.appendChild(roomInfo);
-        li.appendChild(joinBtn);
-        ul.appendChild(li);
-    });
-    roomListOutput.appendChild(ul);
-}
-
-// --- 유틸리티 함수 ---
-function addToLog(message, outputElement = chatOutput) {
-    if (!outputElement) { console.warn("addToLog: outputElement is null"); return; }
-    const p = document.createElement('p');
-    // 터미널 스타일 프롬프트 추가
-    if (outputElement.id === 'chatOutput') {
-        p.textContent = `[Log] > ${message}`;
-    } else {
-        p.textContent = `[Error] > ${message}`;
-    }
-
-    if (outputElement.firstChild) {
-        outputElement.insertBefore(p, outputElement.firstChild);
-    } else {
-        outputElement.appendChild(p);
-    }
-}
-
-function clearLogs() {
-    if(chatOutput) chatOutput.innerHTML = '';
-    if(errorOutput) errorOutput.innerHTML = '';
-}
-
-// --- 턴 변경 로직 (myNickname과 비교) ---
-function parseAndHandleTurnChange(messageBody) {
-    let nextPlayerNickname = null;
-
-    // [!!!] "다음 턴:" 매치 로직 (제거됨) - JSON으로 처리
-
-    // [!!!] '첫 턴'과 '탈락 후 재시작' 텍스트만 파싱
-    const startMatch = messageBody.match(/첫 턴은 (\S+)님입니다./);
-    if (startMatch && startMatch[1]) { nextPlayerNickname = startMatch[1].replace('님', ''); }
-
-    const eliminatedMatch = messageBody.match(/(\S+)님부터 \(아무 단어나\) 다시 시작하세요/);
-    if (eliminatedMatch && eliminatedMatch[1]) { nextPlayerNickname = eliminatedMatch[1].replace('님', ''); }
-
-    if (nextPlayerNickname !== null) {
-        handleTurnChange(nextPlayerNickname);
-    }
-}
-
-function handleTurnChange(nextPlayerNickname) {
-    if (!wordInput || !forfeitBtn || !timerDisplay) {
-        console.error("Required elements not found for handleTurnChange"); return;
-    }
-
-    if (nextPlayerNickname === myNickname) {
+// --- 유틸리티 ---
+function handleTurnChange(nextPlayer) {
+    if (nextPlayer === myNickname) {
         myTurn = true;
         wordInput.disabled = false;
         forfeitBtn.disabled = false;
-        timerDisplay.innerText = `[My Turn: ${myNickname}]`; // "내 턴!"
+        timerDisplay.innerText = "[내 차례!]";
+        timerDisplay.style.color = "var(--btn-primary-bg)";
         wordInput.focus();
     } else {
         myTurn = false;
         wordInput.disabled = true;
         forfeitBtn.disabled = true;
-        if (nextPlayerNickname) {
-            timerDisplay.innerText = `[Wait: ${nextPlayerNickname}'s Turn]`; // "다른 사람 턴"
-        } else {
-            timerDisplay.innerText = "[Timer]"; // 기본값
-        }
+        timerDisplay.innerText = `[대기: ${nextPlayer}]`;
+        timerDisplay.style.color = "var(--btn-danger)";
     }
 }
 
+function addToLog(msg, element) {
+    const p = document.createElement('p');
+    p.textContent = msg;
+    element.appendChild(p);
+    element.scrollTop = element.scrollHeight;
+}
+
+function clearLogs() {
+    chatOutput.innerHTML = '';
+    errorOutput.innerHTML = '';
+}
