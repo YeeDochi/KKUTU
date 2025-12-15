@@ -3,16 +3,15 @@ package com.example.demo.service; // 패키지 확인
 import com.example.demo.DTO.GameRoom;
 import com.example.demo.Event.TurnSuccessEvent;
 import com.example.demo.service.KoreanApiService;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.PropertySource;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID; // [!!!] UUID import
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
@@ -28,8 +27,13 @@ public class GameRoomService {
     private static final int MAX_FAILURES = 3;
     private static final Pattern VALID_WORD_PATTERN = Pattern.compile("^[가-힣]{2,}$");
 
-    @Value("${spring.finishingword}")
-    private List<String> finishingWords;
+
+    private List<String> finishingWords = new ArrayList<>(List.of("늄", "륨", "뮴", "쁨", "슭", "걀", "녁"));
+
+    @PostConstruct
+    public void init() {
+        System.out.println("Finishing words loaded: " + finishingWords);
+    }
 
     // --- 방 생성 메소드 (변경 없음) ---
     public GameRoom createRoom(String roomName, int maxPlayers, int botCount) {
@@ -103,7 +107,7 @@ public class GameRoomService {
         }
         // 한방 단어 방지
         if (finishingWords != null && finishingWords.stream().anyMatch(word::endsWith)) {
-            System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Ends with a forbidden character.");
+            System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Ends with a forbidden character. Forbidden list: " + finishingWords);
             return failResult;
         }
         if (room.getLastWord() != null) {
