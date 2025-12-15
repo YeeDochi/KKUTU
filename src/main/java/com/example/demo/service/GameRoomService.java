@@ -4,6 +4,7 @@ import com.example.demo.DTO.GameRoom;
 import com.example.demo.Event.TurnSuccessEvent;
 import com.example.demo.service.KoreanApiService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -14,7 +15,7 @@ import java.util.Map;
 import java.util.UUID; // [!!!] UUID import
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +27,9 @@ public class GameRoomService {
     private final KoreanApiService koreanApiService;
     private static final int MAX_FAILURES = 3;
     private static final Pattern VALID_WORD_PATTERN = Pattern.compile("^[가-힣]{2,}$");
+
+    @Value("${spring.finishingword}")
+    private List<String> finishingWords;
 
     // --- 방 생성 메소드 (변경 없음) ---
     public GameRoom createRoom(String roomName, int maxPlayers, int botCount) {
@@ -97,8 +101,8 @@ public class GameRoomService {
             System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Invalid pattern");
             return failResult; // [!!!] HashMap 반환
         }
-        // "꾼", "륨"으로 끝나는 단어 방지
-        if (word.endsWith("꾼") || word.endsWith("륨")) {
+        // 한방 단어 방지
+        if (finishingWords != null && finishingWords.stream().anyMatch(word::endsWith)) {
             System.out.println("--- [SYNC VALIDATE FAIL] Word: [" + word + "] - Ends with a forbidden character.");
             return failResult;
         }
