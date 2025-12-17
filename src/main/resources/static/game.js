@@ -55,7 +55,7 @@ window.addEventListener('load', () => {
 
 function goToLobby() {
     const input = document.getElementById('nicknameInput').value.trim();
-    if (!input) return alert("닉네임을 입력해주세요!");
+    if (!input) return showAlert("닉네임을 입력해주세요!");
 
     myNickname = input;
     document.getElementById('welcome-msg').innerText = `${myNickname}님 환영합니다!`;
@@ -98,7 +98,7 @@ async function createRoom() {
     const maxPlayers = parseInt(document.getElementById('maxPlayers').value, 10);
     const botCount = parseInt(document.getElementById('botCount').value, 10);
 
-    if (!roomName) return alert("방 제목을 입력하세요.");
+    if (!roomName) return showAlert("방 제목을 입력하세요.");
 
     try {
         const response = await fetch('/KKUTU/api/rooms', {
@@ -111,12 +111,12 @@ async function createRoom() {
         currentRoomId = room.roomId;
         connectAndJoin(myUid, myNickname);
     } catch (error) {
-        alert("방 생성 중 오류가 발생했습니다.");
+        showAlert("방 생성 중 오류가 발생했습니다.");
     }
 }
 
 function joinExistingRoom(roomId) {
-    if (!myNickname) return alert("닉네임이 없습니다. 다시 로그인해주세요.");
+    if (!myNickname) return showAlert("닉네임이 없습니다. 다시 로그인해주세요.");
     currentRoomId = roomId;
     connectAndJoin(myUid, myNickname);
 }
@@ -178,7 +178,7 @@ function connectAndJoin(uid, nickname) {
         stompClient.subscribe('/user/queue/errors', (message) => {
             addToLog(`[에러] ${message.body}`, errorOutput);
             if (message.body.includes("실패") || message.body.includes("full")) {
-                alert(message.body);
+                showAlert(message.body);
                 exitRoom();
             }
         });
@@ -275,3 +275,19 @@ window.forfeitTurn = function() { // 기권 함수 연결
         stompClient.send(`/app/game/${currentRoomId}/forfeit`, {}, JSON.stringify({ uid: myUid }));
     }
 };
+// [추가] 커스텀 알림창 제어 함수
+function showAlert(msg) {
+    const modal = document.getElementById('alert-modal');
+    const text = document.getElementById('alert-msg-text');
+    if (modal && text) {
+        text.innerText = msg;
+        modal.classList.remove('hidden'); // hidden 클래스 제거하여 표시
+    } else {
+        alert(msg); // 방어 코드
+    }
+}
+
+function closeAlert() {
+    const modal = document.getElementById('alert-modal');
+    if (modal) modal.classList.add('hidden'); // hidden 클래스 추가하여 숨김
+}
