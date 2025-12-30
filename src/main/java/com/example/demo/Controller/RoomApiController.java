@@ -18,6 +18,10 @@ public class RoomApiController {
 
     private final GameRoomService gameRoomService;
 
+    @RequestMapping(method = RequestMethod.HEAD)
+    public void healthCheck() {
+    }
+
     @PostMapping
     public Map<String, String> createRoom(@RequestBody CreateRoomRequest request) {
         GameRoom newRoom = gameRoomService.createRoom(
