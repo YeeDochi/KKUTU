@@ -183,9 +183,11 @@ async function loadRooms() {
 async function createRoom() {
     const nameInput = getEl('roomName');
     const maxInput = getEl('maxPlayers');
+    const botInput = getEl('botCount');
 
     const roomName = nameInput ? nameInput.value.trim() : "새로운 방";
     const maxPlayers = maxInput ? parseInt(maxInput.value, 10) : 8;
+    const botCount = botInput ? parseInt(botInput.value, 10) : 0;
 
     if (!roomName) return showAlert("방 제목을 입력하세요.");
 
@@ -193,7 +195,7 @@ async function createRoom() {
         const response = await fetch('/KKUTU/api/rooms', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomName, maxPlayers })
+            body: JSON.stringify({ roomName, maxPlayers, botCount })
         });
         if (!response.ok) throw new Error("생성 실패");
         const room = await response.json();
@@ -201,6 +203,7 @@ async function createRoom() {
         window.currentRoomId = room.roomId;
         connectAndJoin(window.myUid, window.myNickname);
     } catch (error) {
+        console.error(error); // 에러 로그 추가
         showAlert("방 생성 오류");
     }
 }
