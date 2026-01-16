@@ -1,34 +1,16 @@
-// [KKUTU] game.js - 폭죽 효과 추가 버전
+// [KKUTU] game.js - 오류 수정 및 안전장치 강화 버전
 
-// --- 테마 로직 ---
-function toggleTheme() {
-    document.body.classList.toggle('dark-mode');
-    const isDark = document.body.classList.contains('dark-mode');
-    document.getElementById('themeBtn').innerText = isDark ? 'Light' : 'Dark';
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-}
-if (localStorage.getItem('theme') === 'dark') {
-    document.body.classList.add('dark-mode');
-    document.getElementById('themeBtn').innerText = 'Light';
-}
+// 1. 전역 변수 선언 (가장 먼저 실행됨)
+window.stompClient = null; // window에 붙여서 어디서든 접근 가능하게 함
+window.currentRoomId = null;
+window.myUid = null;
+window.myNickname = null;
+window.myTurn = false;
+window.currentPlayerName = null;
 
-// --- 전역 변수 ---
-let stompClient = null;
-let currentRoomId = null;
-let myUid = null;
-let myNickname = null;
-let myTurn = false;
-
-// --- DOM 요소 ---
-const lobbyDiv = document.getElementById('lobby');
-const gameRoomDiv = document.getElementById('gameRoom');
-const nicknameInput = document.getElementById('nicknameInput');
-const wordInput = document.getElementById('wordInput');
-const chatOutput = document.getElementById('chatOutput');
-const errorOutput = document.getElementById('errorOutput');
-const roomTitle = document.getElementById('roomTitle');
-const timerDisplay = document.getElementById('timerDisplay');
-const forfeitBtn = document.getElementById('forfeitBtn');
+// --- DOM 요소 안전하게 가져오기 ---
+// 요소를 못 찾으면 null을 반환하므로, 사용할 때 체크해야 함
+const getEl = (id) => document.getElementById(id);
 
 // --- UID 생성/조회 ---
 function getOrCreateUid() {
@@ -43,60 +25,167 @@ function getOrCreateUid() {
     return uid;
 }
 
-// --- 초기화 ---
+// --- 초기화 (페이지 로드 시 실행) ---
 window.addEventListener('load', () => {
-    myUid = getOrCreateUid();
-    if (!lobbyDiv.classList.contains('hidden')) {
+    window.myUid = getOrCreateUid();
+
+    // 1. 자동 로그인 체크
+    init();
+
+    // 2. 이미 로비가 보이는 상태라면 방 목록 로드
+    const lobby = getEl('lobby');
+    if (lobby && !lobby.classList.contains('hidden')) {
         loadRooms();
     }
 });
 
-// --- UI 함수 ---
+function init(implementation, config) {
+    // 설정 적용 (에러 방지용 체크 포함)
+    if(typeof GameImpl !== 'undefined') GameImpl = implementation;
 
-function goToLobby() {
-    const input = document.getElementById('nicknameInput').value.trim();
-    if (!input) return showAlert("닉네임을 입력해주세요!");
+    if(config && config.gameName) {
+        const titleEl = getEl('game-title-header');
+        if(titleEl) titleEl.innerText = config.gameName; // 요소가 있을 때만 실행!
+    }
 
-    myNickname = input;
-    document.getElementById('welcome-msg').innerText = `${myNickname}님 환영합니다!`;
-    document.getElementById('login-screen').classList.add('hidden');
-    document.getElementById('lobby').classList.remove('hidden');
+    // 테마 적용
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') document.body.classList.add('dark-mode');
 
+    // 테마 버튼 텍스트 초기화 (에러 1번 해결)
+    const themeBtn = getEl('themeBtn');
+    if(themeBtn) {
+        themeBtn.innerText = (savedTheme === 'dark') ? 'Light' : 'Dark';
+    }
+
+    // ★ 자동 로그인 로직 ★
+    let savedNick = localStorage.getItem('nickname');
+
+    // 토큰 확인 로직
+    if (!savedNick) {
+        const token = localStorage.getItem('token') || localStorage.getItem('jwt');
+        if (token) {
+            try {
+                const base64Url = token.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(c => {
+                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                }).join(''));
+                const payload = JSON.parse(jsonPayload);
+
+                if (payload.nickname) savedNick = payload.nickname;
+                else if (payload.name) savedNick = payload.name;
+
+                if(savedNick) localStorage.setItem('nickname', savedNick);
+            } catch (e) {
+                console.warn("토큰 파싱 실패:", e);
+            }
+        }
+    }
+
+    // 자동 로그인 실행
+    if (savedNick) {
+        console.log("자동 로그인 감지: " + savedNick);
+        window.myNickname = savedNick;
+
+        const inputEl = getEl('nicknameInput');
+        if (inputEl) inputEl.value = savedNick;
+
+        // 바로 로그인 완료 처리
+        completeLogin();
+    }
+}
+
+// --- 화면 전환 (로그인 완료) ---
+function completeLogin() {
+    // 환영 메시지
+    const welcomeMsg = getEl('welcome-msg');
+    if (welcomeMsg) welcomeMsg.innerText = `${window.myNickname}님 환영합니다!`;
+
+    // 화면 전환
+    const loginScreen = getEl('login-screen');
+    const lobby = getEl('lobby');
+    const lobbyScreen = getEl('lobby-screen'); // 호환성
+
+    if (loginScreen) loginScreen.classList.add('hidden');
+    if (lobby) lobby.classList.remove('hidden');
+    if (lobbyScreen) lobbyScreen.classList.remove('hidden');
+
+    // 상단 정보
+    const loggedInArea = getEl('loggedInArea');
+    const userNicknameDisplay = getEl('userNickname');
+
+    if (loggedInArea) loggedInArea.classList.remove('hidden');
+    if (userNicknameDisplay) userNicknameDisplay.innerText = window.myNickname;
+
+    // 방 목록 로드
     loadRooms();
 }
 
+// --- 로그인 버튼 클릭 ---
+function goToLobby() {
+    const inputEl = getEl('nicknameInput');
+    if (!inputEl) return;
+
+    const input = inputEl.value.trim();
+    if (!input) return showAlert("닉네임을 입력해주세요!");
+
+    localStorage.setItem('nickname', input);
+    window.myNickname = input;
+
+    completeLogin();
+}
+
+// --- 테마 토글 ---
+function toggleTheme() {
+    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
+
+    const themeBtn = getEl('themeBtn');
+    if(themeBtn) themeBtn.innerText = isDark ? 'Light' : 'Dark'; // 에러 방지
+
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+
+// --- 방 목록 로드 ---
 async function loadRooms() {
-    const list = document.getElementById('room-list');
-    list.innerHTML = '<li style="padding:20px; text-align:center; color:var(--text-secondary);">불러오는 중...</li>';
+    const list = getEl('room-list');
+    if(!list) return;
+
+    list.innerHTML = '<li style="padding:20px; text-align:center;">불러오는 중...</li>';
 
     try {
         const response = await fetch('/KKUTU/api/rooms');
+        if (!response.ok) throw new Error("서버 응답 오류");
         const rooms = await response.json();
 
-        if (!rooms.length) {
-            list.innerHTML = '<li style="padding:20px; text-align:center; color:var(--text-secondary);">개설된 방이 없습니다.</li>';
+        list.innerHTML = '';
+        if (!rooms || rooms.length === 0) {
+            list.innerHTML = '<li style="padding:20px; text-align:center;">개설된 방이 없습니다.</li>';
         } else {
-            list.innerHTML = '';
             rooms.forEach(room => {
                 const li = document.createElement('li');
                 li.className = 'room-item';
                 li.innerHTML = `
-                    <span style="font-weight:600;">${room.roomName || '이름 없는 방'}</span>
-                    <button class="btn-default" onclick="joinExistingRoom('${room.roomId}')" style="font-size:12px;">참가</button>
+                    <span style="font-weight:600;">${room.roomName || '방'}</span>
+                    <button class="btn-default" onclick="joinExistingRoom('${room.roomId}')">참가</button>
                 `;
                 list.appendChild(li);
             });
         }
     } catch (error) {
         console.error(error);
-        list.innerHTML = '<li style="padding:20px; text-align:center; color:#cf222e;">목록 로드 실패</li>';
+        list.innerHTML = '<li style="padding:20px; text-align:center; color:red;">목록 로드 실패</li>';
     }
 }
 
+// --- 방 생성 ---
 async function createRoom() {
-    const roomName = document.getElementById('roomName').value.trim();
-    const maxPlayers = parseInt(document.getElementById('maxPlayers').value, 10);
-    const botCount = parseInt(document.getElementById('botCount').value, 10);
+    const nameInput = getEl('roomName');
+    const maxInput = getEl('maxPlayers');
+
+    const roomName = nameInput ? nameInput.value.trim() : "새로운 방";
+    const maxPlayers = maxInput ? parseInt(maxInput.value, 10) : 8;
 
     if (!roomName) return showAlert("방 제목을 입력하세요.");
 
@@ -104,165 +193,243 @@ async function createRoom() {
         const response = await fetch('/KKUTU/api/rooms', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomName, maxPlayers, botCount })
+            body: JSON.stringify({ roomName, maxPlayers })
         });
-        if (!response.ok) throw new Error("방 생성 실패");
+        if (!response.ok) throw new Error("생성 실패");
         const room = await response.json();
-        currentRoomId = room.roomId;
-        connectAndJoin(myUid, myNickname);
+
+        window.currentRoomId = room.roomId;
+        connectAndJoin(window.myUid, window.myNickname);
     } catch (error) {
-        showAlert("방 생성 중 오류가 발생했습니다.");
+        showAlert("방 생성 오류");
     }
 }
 
 function joinExistingRoom(roomId) {
-    if (!myNickname) return showAlert("닉네임이 없습니다. 다시 로그인해주세요.");
-    currentRoomId = roomId;
-    connectAndJoin(myUid, myNickname);
+    if (!window.myNickname) return showAlert("닉네임이 없습니다.");
+    window.currentRoomId = roomId;
+    connectAndJoin(window.myUid, window.myNickname);
 }
 
-// --- WebSocket 연결 및 게임 로직 ---
+// --- 웹소켓 연결 ---
 function connectAndJoin(uid, nickname) {
-    if (stompClient && stompClient.connected) return;
+    if (window.stompClient && window.stompClient.connected) return;
 
-    document.getElementById('lobby').classList.add('hidden');
-    document.getElementById('gameRoom').classList.remove('hidden');
-    document.getElementById('roomTitle').innerText = `Room: ${currentRoomId}`;
+    // 화면 전환 로직 (기존 유지)
+    const lobby = document.getElementById('lobby');
+    const lobbyScreen = document.getElementById('lobby-screen');
+    const gameRoom = document.getElementById('gameRoom');
+    const roomTitle = document.getElementById('roomTitle');
+
+    if(lobby) lobby.classList.add('hidden');
+    if(lobbyScreen) lobbyScreen.classList.add('hidden');
+    if(gameRoom) gameRoom.classList.remove('hidden');
+    if(roomTitle) roomTitle.innerText = `Room: ${window.currentRoomId}`;
+
     clearLogs();
 
     const socket = new SockJS('/KKUTU/ws');
-    stompClient = Stomp.over(socket);
-    stompClient.debug = null;
+    window.stompClient = Stomp.over(socket);
+    window.stompClient.debug = null;
 
-    stompClient.connect({}, (frame) => {
-        addToLog('서버에 연결되었습니다.', chatOutput);
+    window.stompClient.connect({}, () => {
+        showChat('SYSTEM', '서버에 연결되었습니다.');
 
-        stompClient.subscribe(`/topic/game-room/${currentRoomId}`, (message) => {
+        window.stompClient.subscribe(`/topic/game-room/${window.currentRoomId}`, (message) => {
             const body = message.body;
-            let data = null;
-            try {
-                if (body.startsWith('{')) {
-                    data = JSON.parse(body);
-                }
-            } catch (e) {}
+            console.log("📩 받은 메시지:", body); // [디버깅용] 콘솔에서 확인 가능
 
-            // [1] JSON 메시지 처리
+            let data = null;
+            try { if(body.startsWith('{')) data = JSON.parse(body); } catch(e){}
+
+            // 1. JSON 형태의 메시지 처리 (완벽한 채팅/게임오버)
             if (data) {
                 if (data.type === 'TURN_CHANGE') {
                     handleTurnChange(data.nextPlayer);
+                    showChat('SYSTEM', `👉 다음 턴: ${data.nextPlayer}`);
                     return;
                 }
-                // [추가] 게임 종료 메시지 감지 (JSON 형식인 경우)
                 if (data.type === 'GAME_OVER') {
-                    addToLog(`🏆 게임 종료! 승자: ${data.winner || '알 수 없음'}`, chatOutput);
-                    fireConfetti(); // 🎉 폭죽 발사!
+                    showChat('SYSTEM', `🏆 게임 종료! 승자: ${data.winner}`);
+                    fireConfetti();
+                    return;
+                }
+                if (data.sender && data.content) {
+                    showChat(data.sender, data.content);
                     return;
                 }
             }
 
-            // [2] 일반 텍스트 메시지 처리
-            addToLog(body, chatOutput);
+            // 2. 텍스트 형태의 메시지 분석 (여기가 핵심!)
 
-            // [추가] 텍스트 메시지에서 승리 감지 (백엔드가 텍스트로 보낼 경우 대비)
-            if (body.includes("승리") || body.includes("우승") || body.includes("최후의 1인")) {
-                fireConfetti(); // 🎉 폭죽 발사!
+            // [A] 채팅 메시지 ("OOO님이 입력했습니다: 안녕")
+            if (body.includes("님이 입력했습니다:")) {
+                const parts = body.split("님이 입력했습니다:");
+                const senderName = parts[0].trim();
+                const chatContent = parts[1].trim();
+                showChat(senderName, chatContent);
             }
-
-            if (body.includes("님이 입력했습니다:")) return;
-            const startMatch = body.match(/첫 턴은 (\S+)님입니다./);
-            if (startMatch) handleTurnChange(startMatch[1].replace('님', ''));
-            const nextMatch = body.match(/다음 턴: (\S+)/);
-            if (nextMatch) handleTurnChange(nextMatch[1]);
+            // [B] 게임 성공/실패 메시지 -> 현재 턴 유저의 말풍선으로 표시!
+            else if (body.includes("(성공!") || body.includes("유효하지 않은") || body.includes("(실패")) {
+                // 현재 턴인 사람의 이름으로 말풍선을 띄웁니다.
+                // 만약 턴 정보가 없으면 시스템으로 띄웁니다.
+                const speaker = window.currentPlayerName || 'SYSTEM';
+                showChat(speaker, body);
+            }
+            // [C] 그 외 시스템 메시지 (입장, 퇴장 등)
+            else {
+                showChat('SYSTEM', body);
+            }
         });
 
-        stompClient.subscribe('/user/queue/errors', (message) => {
-            addToLog(`[에러] ${message.body}`, errorOutput);
-            if (message.body.includes("실패") || message.body.includes("full")) {
-                showAlert(message.body);
-                exitRoom();
-            }
-        });
-
-        stompClient.send(`/app/game/${currentRoomId}/join`, {}, JSON.stringify({ uid: uid, nickname: nickname }));
-    }, (error) => {
-        console.error(error);
+        window.stompClient.send(`/app/game/${window.currentRoomId}/join`, {}, JSON.stringify({ uid, nickname }));
+    }, (err) => {
+        console.error(err);
         exitRoom();
     });
 }
-
 function sendWord() {
-    const word = wordInput.value.trim();
-    if (word && stompClient && currentRoomId) {
-        stompClient.send(`/app/game/${currentRoomId}/word`, {}, JSON.stringify({ word: word, uid: myUid }));
-        wordInput.value = '';
+    const input = getEl('wordInput');
+    if(!input) return;
+
+    const word = input.value.trim();
+    if (word && window.stompClient && window.currentRoomId) {
+        window.stompClient.send(`/app/game/${window.currentRoomId}/word`, {}, JSON.stringify({ word, uid: window.myUid }));
+        input.value = '';
     }
 }
+// [추가] 기권(턴 넘기기) 함수
+function forfeitTurn() {
+    // 연결되어 있고 방에 있을 때만 작동
+    if (window.stompClient && window.currentRoomId) {
+        // 서버로 'forfeit' 메시지 전송 (내 UID 포함)
+        window.stompClient.send(`/app/game/${window.currentRoomId}/forfeit`, {}, JSON.stringify({ uid: window.myUid }));
 
-function exitRoom() {
-    if (stompClient) {
-        stompClient.disconnect();
-        stompClient = null;
+        // 버튼을 바로 비활성화해서 중복 클릭 방지
+        const btn = document.getElementById('forfeitBtn');
+        if(btn) btn.disabled = true;
     }
-    document.getElementById('lobby').classList.remove('hidden');
-    document.getElementById('gameRoom').classList.add('hidden');
-    currentRoomId = null;
+}
+function exitRoom() {
+    if (window.stompClient) {
+        window.stompClient.disconnect();
+        window.stompClient = null;
+    }
+
+    const gameRoom = getEl('gameRoom');
+    const lobby = getEl('lobby');
+    const lobbyScreen = getEl('lobby-screen');
+
+    if(gameRoom) gameRoom.classList.add('hidden');
+    if(lobby) lobby.classList.remove('hidden');
+    if(lobbyScreen) lobbyScreen.classList.remove('hidden');
+
+    window.currentRoomId = null;
     loadRooms();
 }
 
 function handleTurnChange(nextPlayer) {
-    if (nextPlayer === myNickname) {
-        myTurn = true;
-        wordInput.disabled = false;
-        forfeitBtn.disabled = false;
-        timerDisplay.innerText = "[내 차례!]";
-        timerDisplay.style.color = "var(--btn-primary-bg)";
-        wordInput.focus();
-    } else {
-        myTurn = false;
-        wordInput.disabled = true;
-        forfeitBtn.disabled = true;
-        timerDisplay.innerText = `[대기: ${nextPlayer}]`;
-        timerDisplay.style.color = "var(--btn-danger)";
+    // ★ [추가] 현재 턴인 사람을 전역 변수에 저장해둡니다.
+    window.currentPlayerName = nextPlayer;
+
+    const isMe = (nextPlayer === window.myNickname);
+    window.myTurn = isMe;
+
+    const input = document.getElementById('wordInput');
+    const forfeit = document.getElementById('forfeitBtn');
+    const timer = document.getElementById('timerDisplay');
+
+    if(input) {
+        input.disabled = !isMe;
+        if(isMe) input.focus();
+    }
+    if(forfeit) forfeit.disabled = !isMe;
+
+    if(timer) {
+        timer.innerText = isMe ? "[내 차례!]" : `[대기: ${nextPlayer}]`;
+        timer.style.color = isMe ? "var(--btn-primary-bg)" : "var(--btn-danger)";
     }
 }
 
-function addToLog(msg, element) {
-    const p = document.createElement('p');
-    p.textContent = msg;
-    element.appendChild(p);
-    element.scrollTop = element.scrollHeight;
+// --- 채팅/로그 표시 ---
+function showChat(sender, msg) {
+    const chatOutput = getEl('chatOutput');
+    if(!chatOutput) return;
+
+    const div = document.createElement('div');
+    const isMe = (sender === window.myNickname);
+    const isSystem = (sender === 'SYSTEM');
+
+    if (isSystem) {
+        div.className = 'msg-system';
+        div.innerHTML = `<span class="badge">${msg}</span>`;
+    } else {
+        div.className = isMe ? 'msg-row msg-right' : 'msg-row msg-left';
+        div.innerHTML = isMe
+            ? `<div class="msg-bubble">${msg}</div>`
+            : `<div class="msg-name">${sender}</div><div class="msg-bubble">${msg}</div>`;
+    }
+
+    chatOutput.appendChild(div);
+    chatOutput.scrollTop = chatOutput.scrollHeight;
 }
 
 function clearLogs() {
-    chatOutput.innerHTML = '';
-    errorOutput.innerHTML = '';
+    const chat = getEl('chatOutput');
+    const err = getEl('errorOutput');
+    if(chat) chat.innerHTML = '';
+    if(err) err.innerHTML = '';
 }
 
-// --- [추가] 폭죽 효과 함수 (캐치마인드와 동일) ---
-function fireConfetti() {
-    var duration = 3 * 1000;
-    var animationEnd = Date.now() + duration;
-    var defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 };
+// --- 알림창 (에러 3번 해결: window에 등록) ---
+function showAlert(msg) {
+    const modal = getEl('alert-modal');
+    const text = getEl('alert-msg-text');
 
-    function randomInRange(min, max) {
-        return Math.random() * (max - min) + min;
+    if (modal && text) {
+        text.innerText = msg;
+        modal.classList.remove('hidden');
+    } else {
+        alert(msg);
+    }
+}
+
+function closeAlert() {
+    const modal = getEl('alert-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// --- 로그아웃 (에러 2번 해결: 안전 체크) ---
+function logout() {
+    // stompClient가 없어도 에러 안 나게 체크
+    if(window.stompClient) {
+        try { window.stompClient.disconnect(); } catch(e){}
     }
 
-    var interval = setInterval(function() {
-        var timeLeft = animationEnd - Date.now();
+    localStorage.removeItem('token');
+    localStorage.removeItem('nickname');
+    localStorage.removeItem('jwt');
 
-        if (timeLeft <= 0) {
-            return clearInterval(interval);
-        }
+    showAlert("로그아웃 되었습니다.");
 
-        var particleCount = 50 * (timeLeft / duration);
-        // 양쪽에서 팡팡!
-        confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
-        confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
-    }, 250);
+    setTimeout(() => {
+        location.reload();
+    }, 500);
 }
 
-// --- Window 등록 ---
+// --- 폭죽 효과 ---
+function fireConfetti() {
+    if(typeof confetti === 'undefined') return;
+    var duration = 3000;
+    var end = Date.now() + duration;
+    (function frame() {
+        confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 } });
+        confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 } });
+        if (Date.now() < end) requestAnimationFrame(frame);
+    }());
+}
+
+// --- Window에 함수 확실하게 등록 (HTML onclick에서 찾을 수 있게) ---
 window.toggleTheme = toggleTheme;
 window.goToLobby = goToLobby;
 window.loadRooms = loadRooms;
@@ -270,24 +437,8 @@ window.createRoom = createRoom;
 window.joinExistingRoom = joinExistingRoom;
 window.sendWord = sendWord;
 window.exitRoom = exitRoom;
-window.forfeitTurn = function() { // 기권 함수 연결
-    if (stompClient && currentRoomId) {
-        stompClient.send(`/app/game/${currentRoomId}/forfeit`, {}, JSON.stringify({ uid: myUid }));
-    }
-};
-// [추가] 커스텀 알림창 제어 함수
-function showAlert(msg) {
-    const modal = document.getElementById('alert-modal');
-    const text = document.getElementById('alert-msg-text');
-    if (modal && text) {
-        text.innerText = msg;
-        modal.classList.remove('hidden'); // hidden 클래스 제거하여 표시
-    } else {
-        alert(msg); // 방어 코드
-    }
-}
-
-function closeAlert() {
-    const modal = document.getElementById('alert-modal');
-    if (modal) modal.classList.add('hidden'); // hidden 클래스 추가하여 숨김
-}
+window.logout = logout;
+window.showAlert = showAlert;
+window.closeAlert = closeAlert; // ★ 중요: 여기서 에러 3번 해결됨
+window.init = init;
+window.forfeitTurn = forfeitTurn;

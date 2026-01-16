@@ -75,8 +75,16 @@ public class GameRoomService {
 
             if (room.getPlayers().size() - room.getBotCount() == 1) {
                 String firstPlayerNickname = room.getCurrentPlayer().getNickname();
+
+                // 1. 텍스트 메시지 전송 (채팅창 표시용)
                 messagingTemplate.convertAndSend("/topic/game-room/" + roomId,
                         "게임 시작! 첫 턴은 " + firstPlayerNickname + "님입니다.");
+
+                // 2. [추가] JSON 신호 전송 (클라이언트 로직용) -> 이 부분이 있으면 game.js가 텍스트 해석 안 해도 됨
+                Map<String, String> startSignal = new HashMap<>();
+                startSignal.put("type", "TURN_CHANGE");
+                startSignal.put("nextPlayer", firstPlayerNickname);
+                messagingTemplate.convertAndSend("/topic/game-room/" + roomId, startSignal);
             }
             return "SUCCESS"; // [!!!] String 반환
         } else {
